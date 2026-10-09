@@ -6,11 +6,13 @@ Aplicação para gerenciamento e controle de áudio via interface gráfica/scrip
 
 ## 📸 Demonstração
 
-![Interface Principal](https://via.placeholder.com/800x450.png?text=Preview+Principal)
+![Interface Principal](https://raw.githubusercontent.com/cesarhfborges/alsamixer_gui/refs/heads/master/images/printscreen-01.png)
 *Visão geral da interface do sistema.*
-![Interface Principal](https://via.placeholder.com/800x450.png?text=Preview+Principal)
+![Interface Principal](https://raw.githubusercontent.com/cesarhfborges/alsamixer_gui/refs/heads/master/images/printscreen-03.png)
 *Visão geral da interface do sistema.*
-![Interface Principal](https://via.placeholder.com/800x450.png?text=Preview+Principal)
+![Interface Principal](https://raw.githubusercontent.com/cesarhfborges/alsamixer_gui/refs/heads/master/images/printscreen-04.png)
+*Visão geral da interface do sistema.*
+![Interface Principal](https://raw.githubusercontent.com/cesarhfborges/alsamixer_gui/refs/heads/master/images/printscreen-02.png)
 *Visão geral da interface do sistema.*
 
 # 🚀 Configuração do Ambiente Virtual (venv) e Dependências
