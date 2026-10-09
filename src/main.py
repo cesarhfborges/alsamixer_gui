@@ -22,8 +22,8 @@ def main():
     # 3. Injeta o serviço do Mixer na Interface Gráfica (DIP do SOLID)
     app = AlsamixerGUI(audio_controller=mixer_service)
 
-    # Atualiza o estado visual do menu de temas
-    app.theme_switch.set(initial_mode)
+    # O tema inicial segue o sistema
+    app.theme_switch.set("System")
 
     app.mainloop()
 

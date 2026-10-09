@@ -1,0 +1,10 @@
+Simple mixer control 'Mic',0
+  Capabilities: cvolume cswitch cswitch-joined
+  Capture channels: Front Left - Front Right
+  Limits: Capture 0 - 59
+  Front Left: Capture 59 [100%] [4.50dB] [on]
+  Front Right: Capture 59 [100%] [4.50dB] [on]
+Simple mixer control 'Extension Unit',0
+  Capabilities: pswitch pswitch-joined
+  Playback channels: Mono
+  Mono: Playback [off]
