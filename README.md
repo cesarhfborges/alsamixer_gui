@@ -1,6 +1,27 @@
 # 🎛️ AlsaMixer
 
-Aplicação para gerenciamento e controle de áudio via interface gráfica/script integrado ao ALSA.
+O **AlsaMixer GUI** é uma interface gráfica moderna desenvolvida em Python com **CustomTkinter** para gerenciar o subsistema de áudio Linux (**ALSA**). A aplicação entrega uma experiência visual inspirada no clássico utilitário de terminal `alsamixer`, unindo controle granular de hardware a recursos nativos de desktop.
+
+---
+
+### ✨ Funcionalidades
+
+* **Gerenciamento de Placas de Som:** detecção automática e seleção de dispositivos físicos listados em `/proc/asound/cards`.
+* **Abas Especializadas:**
+  * **Saída (Playback):** ajuste de volume e mudo para caixas/fones e saídas digitais **S/PDIF** (`IEC958`).
+  * **Entrada (Capture):** controle de ganho, microfones e captura.
+  * **Opções:** chaves e enumerações do hardware (ex.: *Auto-Mute Mode*, *Input Source*).
+* **Controles em Colunas:**
+  * Sliders verticais com escala perceptual (`amixer -M`, mapeamento logarítmico real).
+  * Checkbox de mudo integrado ao switch de hardware (`mute/unmute` e `nocap/cap`).
+  * Chaves dedicadas ON/OFF para saídas digitais e toggles simples.
+* **Navegação & Scroll:** colunas lado a lado com rolagem horizontal no painel e ajuste fino de volume (±3%) diretamente pela roda do mouse sobre os sliders.
+* **Bandeja do Sistema (System Tray):**
+  * Suporte a execução em segundo plano via tray icon (`pystray`).
+  * Fechar para a bandeja, inicialização minimizada e garantia de instância única via socket Unix.
+* **Sincronização em Tempo Real:** *polling* automático (2s) com *debounce* (~60 ms) ao mover sliders, refletindo mudanças externas sem congelar a interface.
+* **Gerenciamento Multi-Monitor:** memorização inteligente de tamanho, posição física real (offset de decorações do gerenciador de janelas) e prevenção de saltos de tela ao aplicar escalas.
+* **Personalização Completa:** temas Claro/Escuro/Sistema, escala de DPI da interface e persistência atômica das preferências em `$XDG_CONFIG_HOME/alsamixer-gui/settings.json`.
 
 ---
 

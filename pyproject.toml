@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alsamixer-gui"
+dynamic = ["version"]
+description = "GUI para o ALSA Mixer"
+authors = [{ name = "Seu Nome" }]
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.setuptools_scm]
+# Gera opcionalmente um arquivo de versão estático para produção/distribuição
+write_to = "src/_version.py"

@@ -4,4 +4,7 @@ packaging==26.3
 pillow==12.3.0
 pystray==0.19.5
 python-xlib==0.33
+setuptools==84.0.0
+setuptools-scm==10.3.4
 six==1.17.0
+vcs-versioning==2.6.0
