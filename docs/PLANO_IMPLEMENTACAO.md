@@ -115,9 +115,11 @@ inválidos → os padrões são usados para os campos inválidos.
     "poll_interval_ms": 2000,     // 0 = atualização automática desligada
     "wheel_step": 3,              // % por giro da roda sobre o slider
     "remember_window": true,
+    "tray_enabled": false,        // ícone na bandeja; fechar apenas esconde
+    "start_hidden": false,        // com a bandeja ativa, inicia só com o ícone
     "last_card": "PCH",           // estado: gravado automaticamente
     "last_tab": "Saída",          // estado
-    "window_geometry": "960x620"  // estado (só o tamanho)
+    "window_geometry": "1309x636+2225+222"  // estado: tamanho + posição real da janela
   }
 }
 ```
@@ -128,7 +130,9 @@ inválidos → os padrões são usados para os campos inválidos.
 | Escala da interface | Textos/selects maiores em telas de alta resolução. |
 | Placa de som padrão | Dispositivo exibido ao abrir. Usa o **id** da placa (ex.: `PCH`), estável mesmo quando o índice muda ao conectar/desconectar USB. Se a placa não estiver presente, cai na última usada e depois na primeira. |
 | Aba inicial | Saída/Entrada/Opções ou a última utilizada. |
-| Lembrar tamanho da janela | Restaura o tamanho (a posição fica a cargo do gerenciador de janelas). |
+| Lembrar tamanho e posição | Reabre no mesmo monitor/posição/tamanho. Posição salva fora dos monitores atuais (monitor desconectado) → centraliza no monitor principal. |
+| Manter na bandeja | Ícone na bandeja do sistema; fechar a janela apenas a esconde. |
+| Iniciar minimizado na bandeja | Abre só com o ícone (ignorado se a bandeja não estiver disponível). |
 | Atualização automática | Intervalo do polling (ou desligado). |
 | Passo da roda do mouse | Sensibilidade do ajuste de volume pela roda. |
 
@@ -140,3 +144,47 @@ Arquitetura:
   `AppSettings` + um `SettingField` em `build_fields()`.
 - `AlsamixerGUI.apply_settings()` aplica tudo em tempo de execução (tema, escala, polling,
   passo da roda via `ViewOptions` compartilhado pela `ControlViewFactory`).
+
+## Janela em vários monitores (correção)
+
+**Sintoma:** a janela abria ora em um monitor, ora em outro, e "pulava" sozinha para outro monitor.
+
+**Causa (reproduzida e medida):**
+1. Sem posição definida, o Cinnamon/Muffin posiciona a janela no monitor do ponteiro do mouse.
+2. Nesse caso o Tk continua achando que a janela está em `+0+0`. Depois de um arrasto, o Tk também
+   passa a ter uma posição levemente errada (ex.: `4115+114` em vez de `4125+122`).
+3. `ctk.set_widget_scaling()` faz o CustomTkinter reaplicar `minsize/maxsize/geometry`; o gerenciador
+   de janelas então move a janela para a posição que o Tk acredita ter — `+0+0` = monitor da esquerda.
+   O app chamava isso **a cada salvamento de configurações**, mesmo sem mudar a escala.
+
+**Correção (`src/gui/window_placement.py` + `AlsamixerGUI`):**
+- Posição sempre explícita na abertura: a salva (se ainda estiver em um monitor existente, lido do
+  `xrandr --listmonitors`) ou o centro do monitor principal.
+- Mede a decoração da janela (borda/barra de título) e calcula a posição **real** (`frame_position`).
+- Sincroniza essa posição no Tk antes de reaplicar a escala; a escala só é reaplicada se mudou.
+- Salva tamanho + posição real ao fechar/esconder; Configurações abre centralizada sobre a janela.
+
+## Lista suspensa dos selects
+
+O `CTkOptionMenu` usa um `tkinter.Menu` nativo: no Linux é pequeno, sem padding e fora do tema.
+`src/gui/select.py` → `Select` (mesma API do CTkOptionMenu) com popup próprio: itens de 38 px com
+padding interno, item selecionado destacado, hover, rolagem acima de 8 itens, teclado (↑ ↓ Enter Esc),
+fecha ao clicar fora e abre para cima quando não há espaço abaixo no monitor. Usado no select de placa,
+nas Opções e na tela de Configurações.
+
+## Bandeja do sistema
+
+`src/gui/tray.py` (pystray, backend X11/XEmbed no Cinnamon; ícone desenhado com Pillow).
+
+| Comportamento | Implementação |
+|---|---|
+| Fechar (X) com a bandeja ativa | Esconde a janela (salva posição/estado); o app continua no ícone. |
+| Clique no ícone / "Mostrar / Ocultar" | Alterna a janela, reabrindo exatamente onde estava. |
+| "Sair" no menu do ícone | Encerra de verdade (salva estado, remove o ícone). |
+| Abrir o app de novo | Instância única (`single_instance.py`, socket Unix abstrato): mostra a janela existente em vez de abrir outra. |
+| Iniciar minimizado na bandeja | Configuração opcional. |
+| Bandeja indisponível | `NullTrayIcon`: fechar encerra normalmente — o app nunca fica escondido sem ícone. |
+| Escondida na bandeja | O polling do mixer é pausado. |
+
+Callbacks do pystray e do socket rodam em outras threads e são repassados à thread do Tk pelo
+`UiDispatcher` (fila + `after`), pois o Tkinter não é thread-safe.

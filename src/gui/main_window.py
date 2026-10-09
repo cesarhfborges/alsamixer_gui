@@ -1,5 +1,5 @@
 from dataclasses import replace
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import customtkinter as ctk
 
@@ -10,17 +10,24 @@ from src.core.settings import AppSettings, InMemorySettingsRepository, SettingsR
 from .actions import CardActions
 from .control_panel import ControlPanel
 from .control_widgets import ControlViewFactory
+from .dispatcher import UiDispatcher
+from .select import Select
 from .settings_dialog import SettingsDialog
 from .theme_manager import ThemeManager
+from .tray import TrayIcon, create_tray_icon
+from .window_placement import choose_position, detect_monitors, parse_geometry
 
 NO_CARD = "(nenhuma)"
-DEFAULT_GEOMETRY = "960x620"
+DEFAULT_SIZE = (960, 620)
+
+TrayFactory = Callable[..., TrayIcon]
 
 
 class AlsamixerGUI(ctk.CTk):
     def __init__(self, audio_controller: AudioController,
                  settings_repository: Optional[SettingsRepository] = None,
-                 view_factory: Optional[ControlViewFactory] = None):
+                 view_factory: Optional[ControlViewFactory] = None,
+                 tray_factory: TrayFactory = create_tray_icon):
         super().__init__()
         self.audio_controller = audio_controller
         self.settings_repository = settings_repository or InMemorySettingsRepository()
@@ -32,20 +39,25 @@ class AlsamixerGUI(ctk.CTk):
             on_error=self._on_action_error,
             on_success=lambda: self._set_status(""),
         )
+        self.dispatcher = UiDispatcher(self)
+        self.tray = tray_factory(on_toggle=self.toggle_window, on_quit=self.quit_app, post=self.dispatcher.post)
 
         self.cards: List[SoundCard] = []
         self.current_card: Optional[SoundCard] = None
         self.settings_dialog: Optional[SettingsDialog] = None
         self._layout_signature: Tuple = ()
         self._poll_job: Optional[str] = None
+        self._applied_scale: Optional[float] = None
+        self._explicit_position = False
+        self._frame_offset: Optional[Tuple[int, int]] = None  # (borda, barra de título) do gerenciador de janelas
 
         self.title("Python Alsamixer GUI")
         self.minsize(560, 480)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
 
-        self.apply_settings(self.settings)
         self._restore_geometry()
+        self.apply_settings(self.settings)
 
         self._build_header()
         self._build_card_selector()
@@ -54,8 +66,13 @@ class AlsamixerGUI(ctk.CTk):
         self.status_label.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
 
         self.protocol("WM_DELETE_WINDOW", self.close)
+        if self._explicit_position:
+            self.after(300, self._measure_frame_offset)
         self.reload_cards(initial=True)
         self.tabview.set(self.settings.initial_tab())
+
+        if self.settings.start_hidden and self.tray.running:
+            self.withdraw()
 
     # ------------------------------------------------------------------ layout
     def _build_header(self) -> None:
@@ -72,15 +89,13 @@ class AlsamixerGUI(ctk.CTk):
         toolbar = ctk.CTkFrame(self)
         toolbar.grid(row=1, column=0, sticky="ew", padx=16, pady=6)
         toolbar.grid_columnconfigure(1, weight=1)
-        font = ctk.CTkFont(size=15)
         ctk.CTkLabel(toolbar, text="Placa de som:", font=ctk.CTkFont(size=15, weight="bold")).grid(
             row=0, column=0, padx=(12, 8), pady=10)
-        self.card_select = ctk.CTkOptionMenu(toolbar, values=[NO_CARD], height=40, font=font,
-                                             dropdown_font=font, dynamic_resizing=False,
-                                             command=self._on_card_selected)
+        self.card_select = Select(toolbar, font_size=15, values=[NO_CARD], height=40,
+                                  command=self._on_card_selected)
         self.card_select.grid(row=0, column=1, sticky="ew", padx=6, pady=10)
-        self.reload_button = ctk.CTkButton(toolbar, text="Recarregar", width=120, height=40, font=font,
-                                           command=self.reload_cards)
+        self.reload_button = ctk.CTkButton(toolbar, text="Recarregar", width=120, height=40,
+                                           font=ctk.CTkFont(size=15), command=self.reload_cards)
         self.reload_button.grid(row=0, column=2, padx=(6, 12), pady=10)
 
     def _build_tabs(self) -> None:
@@ -96,26 +111,126 @@ class AlsamixerGUI(ctk.CTk):
             panel.grid(row=0, column=0, sticky="nsew")
             self.panels[section] = panel
 
+    # ------------------------------------------------------- posição da janela
+    def _restore_geometry(self) -> None:
+        """Tamanho/posição salvos; sem posição válida, centraliza no monitor principal.
+
+        A posição é sempre explícita: se o gerenciador de janelas escolher, o Tk fica
+        achando que a janela está em +0+0 e ela "pula" de monitor ao reaplicar a geometria.
+        """
+        saved = self.settings.window_geometry if self.settings.remember_window else None
+        width, height, x, y = parse_geometry(saved)
+        width, height = width or DEFAULT_SIZE[0], height or DEFAULT_SIZE[1]
+        position = choose_position(width, height, (x, y), detect_monitors())
+        if position is None:
+            self.geometry(f"{width}x{height}")
+        else:
+            self.geometry(f"{width}x{height}+{position[0]}+{position[1]}")
+            self._explicit_position = True
+
+    def _measure_frame_offset(self) -> None:
+        """Mede a decoração (borda/barra de título): área interna real - posição pedida ao Tk.
+
+        Tenta de novo enquanto a janela não estiver visível (ex.: iniciada escondida na bandeja).
+        """
+        if self._frame_offset is not None:
+            return
+        _, _, x, y = parse_geometry(self.wm_geometry())
+        if x is not None and self.winfo_ismapped():
+            self._frame_offset = (self.winfo_rootx() - x, self.winfo_rooty() - y)
+        else:
+            self.after(300, self._measure_frame_offset)
+
+    def frame_position(self) -> Optional[Tuple[int, int]]:
+        """Posição real da janela (inclusive após o usuário arrastá-la)."""
+        if self._frame_offset is None or not self.winfo_ismapped():
+            return None
+        return self.winfo_rootx() - self._frame_offset[0], self.winfo_rooty() - self._frame_offset[1]
+
+    def _sync_position(self) -> None:
+        """Informa ao Tk a posição real antes de qualquer reaplicação de geometria."""
+        position = self.frame_position()
+        if position is not None:
+            self.geometry(f"+{position[0]}+{position[1]}")
+
+    def _geometry_for_saving(self) -> str:
+        size = self.geometry().split("+")[0].split("-")[0]
+        position = self.frame_position()
+        return f"{size}+{position[0]}+{position[1]}" if position else size
+
+    # ------------------------------------------------- mostrar/esconder e sair
+    @property
+    def is_hidden(self) -> bool:
+        return self.state() in ("withdrawn", "iconic")
+
+    def show_window(self) -> None:
+        _, _, x, y = parse_geometry(self.settings.window_geometry)
+        if self.state() == "withdrawn" and x is not None:
+            self.geometry(f"+{x}+{y}")  # volta exatamente onde estava
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def hide_window(self) -> None:
+        self._save_window_state()
+        self.withdraw()
+
+    def toggle_window(self) -> None:
+        if self.is_hidden:
+            self.show_window()
+        else:
+            self.hide_window()
+
+    def close(self) -> None:
+        """Botão fechar: com a bandeja ativa só esconde; senão encerra."""
+        if self.tray.running:
+            self.hide_window()
+        else:
+            self.quit_app()
+
+    def quit_app(self) -> None:
+        if not self.is_hidden:
+            self._save_window_state()
+        self.tray.stop()
+        self.dispatcher.stop()
+        self.destroy()
+
+    def _save_window_state(self) -> None:
+        if self.settings.remember_window:
+            self._update_state(window_geometry=self._geometry_for_saving())
+
     # ----------------------------------------------------------- configurações
     def apply_settings(self, settings: AppSettings) -> None:
         """Aplica as preferências em tempo de execução."""
         self.settings = settings
         ThemeManager.apply_theme(settings.theme)
-        ctk.set_widget_scaling(settings.ui_scale)
+        if settings.ui_scale != self._applied_scale:
+            # Mudar a escala reaplica a geometria da janela: sincroniza a posição antes
+            self._sync_position()
+            ctk.set_widget_scaling(settings.ui_scale)
+            self._applied_scale = settings.ui_scale
         self.view_factory.options.wheel_step = settings.wheel_step
         self._restart_polling()
+        if settings.tray_enabled and self.tray.available:
+            self.tray.start()
+        else:
+            self.tray.stop()
 
     def open_settings(self) -> None:
         if self.settings_dialog is not None and self.settings_dialog.winfo_exists():
             self.settings_dialog.focus()
             return
         self.settings_dialog = SettingsDialog(self, self.settings, self.cards, on_save=self._on_settings_saved,
-                                              location=self.settings_repository.location)
+                                              location=self.settings_repository.location,
+                                              tray_available=self.tray.available)
 
     def _on_settings_saved(self, settings: AppSettings) -> None:
         self.apply_settings(settings)
         self._save_settings()
-        self._set_status("Configurações salvas.")
+        if settings.tray_enabled and not self.tray.available:
+            self._set_status("Bandeja do sistema indisponível neste ambiente.", error=True)
+        else:
+            self._set_status("Configurações salvas.")
 
     def _update_state(self, **state) -> None:
         self.settings = replace(self.settings, **state)
@@ -126,19 +241,6 @@ class AlsamixerGUI(ctk.CTk):
             self.settings_repository.save(self.settings)
         except OSError as exc:
             self._set_status(f"Não foi possível salvar as configurações: {exc}", error=True)
-
-    def _restore_geometry(self) -> None:
-        geometry = self.settings.window_geometry if self.settings.remember_window else None
-        try:
-            self.geometry(geometry or DEFAULT_GEOMETRY)
-        except Exception:
-            self.geometry(DEFAULT_GEOMETRY)
-
-    def close(self) -> None:
-        if self.settings.remember_window:
-            # Só o tamanho: a posição informada pelo gerenciador de janelas não é confiável
-            self._update_state(window_geometry=self.geometry().split("+")[0].split("-")[0])
-        self.destroy()
 
     # ------------------------------------------------------------------ placas
     def reload_cards(self, initial: bool = False) -> None:
@@ -215,13 +317,16 @@ class AlsamixerGUI(ctk.CTk):
             self._poll_job = self.after(self.settings.poll_interval_ms, self._poll)
 
     def _poll(self) -> None:
-        self.refresh_controls()
+        if not self.is_hidden:  # escondida na bandeja: não consulta o mixer à toa
+            self.refresh_controls()
         self._poll_job = self.after(self.settings.poll_interval_ms, self._poll)
 
     def destroy(self) -> None:
         if self._poll_job is not None:
             self.after_cancel(self._poll_job)
             self._poll_job = None
+        self.dispatcher.stop()
+        self.tray.stop()
         super().destroy()
 
     # ------------------------------------------------------------------ status

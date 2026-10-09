@@ -3,7 +3,7 @@
 Arquivo: $XDG_CONFIG_HOME/alsamixer-gui/settings.json (padrão ~/.config/alsamixer-gui/settings.json)
 
 - Preferências: editadas pelo usuário na tela de Configurações.
-- Estado: gravado automaticamente (última placa/aba, tamanho da janela).
+- Estado: gravado automaticamente (última placa/aba, tamanho e posição da janela).
 """
 import json
 import os
@@ -34,6 +34,8 @@ class AppSettings:
     poll_interval_ms: int = 2000    # 0 = atualização automática desligada
     wheel_step: int = 3             # % por passo da roda do mouse sobre o slider
     remember_window: bool = True    # restaura tamanho/posição da janela
+    tray_enabled: bool = False      # ícone na bandeja; fechar a janela apenas a esconde
+    start_hidden: bool = False      # com a bandeja ativa, inicia só com o ícone
 
     # --- Estado (automático) --------------------------------------------
     last_card: Optional[str] = None
@@ -52,6 +54,8 @@ class AppSettings:
             "poll_interval_ms": self.poll_interval_ms in POLL_INTERVALS_MS,
             "wheel_step": self.wheel_step in WHEEL_STEPS,
             "remember_window": isinstance(self.remember_window, bool),
+            "tray_enabled": isinstance(self.tray_enabled, bool),
+            "start_hidden": isinstance(self.start_hidden, bool),
             "last_card": self.last_card is None or isinstance(self.last_card, str),
             "last_tab": self.last_tab is None or self.last_tab in tabs,
             "window_geometry": self.window_geometry is None or isinstance(self.window_geometry, str),

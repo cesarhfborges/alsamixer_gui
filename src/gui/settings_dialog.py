@@ -14,6 +14,7 @@ from src.core.layout import Section
 from src.core.models import SoundCard
 from src.core.settings import (LAST_USED, POLL_INTERVALS_MS, THEMES, UI_SCALES, WHEEL_STEPS,
                                AppSettings)
+from .select import Select
 from .theme_manager import ThemeManager
 
 Choices = Sequence[Tuple[str, Any]]  # (rótulo exibido, valor salvo)
@@ -32,7 +33,8 @@ class SettingField:
     choices: Choices
 
 
-def build_fields(cards: List[SoundCard]) -> List[SettingField]:
+def build_fields(cards: List[SoundCard], tray_available: bool = True) -> List[SettingField]:
+    unavailable = "" if tray_available else " (Indisponível neste ambiente: instale pystray e Pillow.)"
     return [
         SettingField("theme", "Aparência", "Tema",
                      "Cores da interface. \"Seguir o sistema\" detecta o modo escuro do desktop.",
@@ -46,8 +48,15 @@ def build_fields(cards: List[SoundCard]) -> List[SettingField]:
         SettingField("default_tab", "Inicialização", "Aba inicial",
                      "Aba selecionada ao abrir o aplicativo.",
                      [("Última utilizada", LAST_USED)] + [(s.value, s.value) for s in Section]),
-        SettingField("remember_window", "Inicialização", "Lembrar tamanho da janela",
-                     "Restaura o tamanho da janela da última sessão.",
+        SettingField("remember_window", "Inicialização", "Lembrar tamanho e posição",
+                     "Reabre a janela no mesmo monitor, posição e tamanho da última sessão.",
+                     [("Sim", True), ("Não", False)]),
+        SettingField("tray_enabled", "Bandeja do sistema", "Manter na bandeja",
+                     "Mostra um ícone na bandeja. Fechar a janela apenas a esconde; clique no ícone para "
+                     "reabrir e use \"Sair\" no menu do ícone para encerrar." + unavailable,
+                     [("Sim", True), ("Não", False)]),
+        SettingField("start_hidden", "Bandeja do sistema", "Iniciar minimizado na bandeja",
+                     "Ao abrir, exibe apenas o ícone na bandeja (requer \"Manter na bandeja\").",
                      [("Sim", True), ("Não", False)]),
         SettingField("poll_interval_ms", "Comportamento", "Atualização automática",
                      "Frequência de leitura do mixer para refletir mudanças externas (teclas de volume, outros apps).",
@@ -59,19 +68,20 @@ def build_fields(cards: List[SoundCard]) -> List[SettingField]:
 
 
 class SettingsDialog(ctk.CTkToplevel):
+    WIDTH, HEIGHT = 680, 600
+
     def __init__(self, master, settings: AppSettings, cards: List[SoundCard],
-                 on_save: Callable[[AppSettings], None], location: str = ""):
+                 on_save: Callable[[AppSettings], None], location: str = "", tray_available: bool = True):
         super().__init__(master)
         self.title("Configurações")
-        self.geometry("680x600")
         self.minsize(520, 420)
         self.transient(master)
+        self._center_over(master)
 
         self._settings = settings
         self._on_save = on_save
-        self._selectors: Dict[str, Tuple[ctk.CTkOptionMenu, Dict[str, Any]]] = {}
+        self._selectors: Dict[str, Tuple[Select, Dict[str, Any]]] = {}
         self._label_font = ctk.CTkFont(size=14, weight="bold")
-        self._select_font = ctk.CTkFont(size=14)
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -81,7 +91,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.body.grid_columnconfigure(0, weight=1)
 
         group = None
-        for field in build_fields(cards):
+        for field in build_fields(cards, tray_available):
             if field.group != group:
                 group = field.group
                 self._add_group_title(group)
@@ -91,6 +101,13 @@ class SettingsDialog(ctk.CTkToplevel):
         self.after(100, self._make_modal)
 
     # --- construção --------------------------------------------------------
+    def _center_over(self, master) -> None:
+        """Abre sobre a janela principal (e não onde o gerenciador de janelas preferir)."""
+        master.update_idletasks()
+        x = master.winfo_rootx() + max(0, (master.winfo_width() - self.WIDTH) // 2)
+        y = master.winfo_rooty() + max(0, (master.winfo_height() - self.HEIGHT) // 2)
+        self.geometry(f"{self.WIDTH}x{self.HEIGHT}+{x}+{y}")
+
     def _next_row(self) -> int:
         return len(self.body.grid_slaves(column=0))
 
@@ -117,9 +134,7 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(row, text=field.description, text_color="gray55", anchor="w", justify="left",
                      wraplength=300).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
 
-        selector = ctk.CTkOptionMenu(row, values=list(label_to_value), width=230, height=38,
-                                     font=self._select_font, dropdown_font=self._select_font,
-                                     dynamic_resizing=False)
+        selector = Select(row, values=list(label_to_value), width=230)
         selector.set(next(label for label, value in choices if value == current))
         selector.grid(row=0, column=1, rowspan=2, padx=12, pady=10)
         self._selectors[field.attr] = (selector, label_to_value)

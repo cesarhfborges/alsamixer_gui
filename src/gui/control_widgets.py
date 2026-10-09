@@ -21,6 +21,7 @@ import customtkinter as ctk
 from src.core.interfaces import ControlActions
 from src.core.layout import ControlKind, ControlSpec
 from src.core.models import Direction, MixerControl
+from .select import Select
 from .theme_manager import ThemeManager
 
 DEBOUNCE_MS = 60
@@ -194,10 +195,8 @@ class EnumControlView(ControlView):
     WIDTH = 150
 
     def _build_widgets(self) -> None:
-        self.menu = ctk.CTkOptionMenu(self, values=self.control.enum_items or [""], width=self.WIDTH - 12,
-                                      height=36, font=ctk.CTkFont(size=14),
-                                      dropdown_font=ctk.CTkFont(size=14),
-                                      dynamic_resizing=False, command=self._on_select)
+        self.menu = Select(self, values=self.control.enum_items or [""], width=self.WIDTH - 12,
+                           command=self._on_select)
         self.menu.grid(row=ROW_BODY, column=0, padx=6)
 
     def _render(self, control: MixerControl) -> None:

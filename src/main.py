@@ -8,19 +8,30 @@ import customtkinter as ctk
 from src.core.linux_mixer import AlsaMixerController
 from src.core.settings import JsonSettingsRepository
 from src.gui.main_window import AlsamixerGUI
+from src.gui.single_instance import SingleInstance
 
 
 def main():
+    # 1. Uma única instância: se já houver uma (ex.: escondida na bandeja), ela é exibida
+    instance = SingleInstance()
+    if not instance.acquire():
+        print("O Alsamixer GUI já está em execução; exibindo a janela existente.")
+        return
+
     ctk.set_default_color_theme("blue")
 
-    # 1. Instancia a lógica de controle (Core) e o armazenamento das configurações
+    # 2. Instancia a lógica de controle (Core) e o armazenamento das configurações
     mixer_service = AlsaMixerController()
     settings_repository = JsonSettingsRepository()
 
-    # 2. Injeta as dependências na Interface Gráfica (DIP do SOLID);
-    #    tema, escala e placa inicial vêm das configurações salvas
+    # 3. Injeta as dependências na Interface Gráfica (DIP do SOLID);
+    #    tema, escala, placa inicial e bandeja vêm das configurações salvas
     app = AlsamixerGUI(audio_controller=mixer_service, settings_repository=settings_repository)
-    app.mainloop()
+    instance.on_message = lambda message: app.dispatcher.post(app.show_window)
+    try:
+        app.mainloop()
+    finally:
+        instance.release()
 
 
 if __name__ == "__main__":
