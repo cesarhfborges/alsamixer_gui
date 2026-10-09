@@ -6,25 +6,20 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import customtkinter as ctk
 from src.core.linux_mixer import AlsaMixerController
+from src.core.settings import JsonSettingsRepository
 from src.gui.main_window import AlsamixerGUI
-from src.gui.theme_manager import ThemeManager
 
 
 def main():
-    # 1. Configura o tema inicial do sistema
-    initial_mode = ThemeManager.detect_system_mode()
-    ctk.set_appearance_mode(initial_mode)
     ctk.set_default_color_theme("blue")
 
-    # 2. Instancia a lógica de controle (Core)
+    # 1. Instancia a lógica de controle (Core) e o armazenamento das configurações
     mixer_service = AlsaMixerController()
+    settings_repository = JsonSettingsRepository()
 
-    # 3. Injeta o serviço do Mixer na Interface Gráfica (DIP do SOLID)
-    app = AlsamixerGUI(audio_controller=mixer_service)
-
-    # O tema inicial segue o sistema
-    app.theme_switch.set("System")
-
+    # 2. Injeta as dependências na Interface Gráfica (DIP do SOLID);
+    #    tema, escala e placa inicial vêm das configurações salvas
+    app = AlsamixerGUI(audio_controller=mixer_service, settings_repository=settings_repository)
     app.mainloop()
 
 

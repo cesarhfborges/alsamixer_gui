@@ -96,3 +96,47 @@ python -m unittest discover -s tests -t . -v
 ```
 
 Requisitos de sistema: `alsa-utils` (comando `amixer`) e `python3-tk`.
+
+## Configurações e arquivo de estado
+
+Arquivo JSON em `$XDG_CONFIG_HOME/alsamixer-gui/settings.json`
+(padrão `~/.config/alsamixer-gui/settings.json`), gravado de forma atômica
+(arquivo temporário + `os.replace`). Arquivo ausente, corrompido ou com valores
+inválidos → os padrões são usados para os campos inválidos.
+
+```jsonc
+{
+  "version": 1,
+  "settings": {
+    "theme": "System",            // System | Dark | Light
+    "ui_scale": 1.0,              // 0.9 | 1.0 | 1.1 | 1.25 | 1.5
+    "default_card": "PCH",        // id da placa (/proc/asound/cards) ou "" = última utilizada
+    "default_tab": "",            // Saída | Entrada | Opções ou "" = última utilizada
+    "poll_interval_ms": 2000,     // 0 = atualização automática desligada
+    "wheel_step": 3,              // % por giro da roda sobre o slider
+    "remember_window": true,
+    "last_card": "PCH",           // estado: gravado automaticamente
+    "last_tab": "Saída",          // estado
+    "window_geometry": "960x620"  // estado (só o tamanho)
+  }
+}
+```
+
+| Ponto configurável | Por quê |
+|---|---|
+| Tema | Movido da janela principal para a tela de Configurações. |
+| Escala da interface | Textos/selects maiores em telas de alta resolução. |
+| Placa de som padrão | Dispositivo exibido ao abrir. Usa o **id** da placa (ex.: `PCH`), estável mesmo quando o índice muda ao conectar/desconectar USB. Se a placa não estiver presente, cai na última usada e depois na primeira. |
+| Aba inicial | Saída/Entrada/Opções ou a última utilizada. |
+| Lembrar tamanho da janela | Restaura o tamanho (a posição fica a cargo do gerenciador de janelas). |
+| Atualização automática | Intervalo do polling (ou desligado). |
+| Passo da roda do mouse | Sensibilidade do ajuste de volume pela roda. |
+
+Arquitetura:
+- `src/core/settings.py` — `AppSettings` (dados + validação + regras `initial_card`/`initial_tab`),
+  `SettingsRepository` (ABC), `JsonSettingsRepository` e `InMemorySettingsRepository` (testes).
+- `src/gui/settings_dialog.py` — campos declarativos (`SettingField`) e um único método
+  `_add_field()` que cria qualquer linha da tela. Nova configuração = atributo em
+  `AppSettings` + um `SettingField` em `build_fields()`.
+- `AlsamixerGUI.apply_settings()` aplica tudo em tempo de execução (tema, escala, polling,
+  passo da roda via `ViewOptions` compartilhado pela `ControlViewFactory`).

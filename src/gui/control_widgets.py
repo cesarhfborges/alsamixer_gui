@@ -1,7 +1,7 @@
 """Controles visuais do mixer, no formato de colunas (faixas) como no alsamixer.
 
 Todos os controles seguem o mesmo contrato (`ControlView`):
-  - construtor idêntico: (master, spec, actions)
+  - construtor idêntico: (master, spec, actions, options)
   - grade comum de 4 linhas: cabeçalho, corpo (expande), rodapé e nome
   - `_build_widgets()` preenche cabeçalho/corpo/rodapé
   - `_render(control)` reflete o estado do hardware na tela
@@ -13,6 +13,7 @@ sem alterar a janela (Open/Closed).
 """
 import time
 from abc import ABCMeta, abstractmethod
+from dataclasses import dataclass
 from typing import Dict, Optional, Type
 
 import customtkinter as ctk
@@ -25,9 +26,14 @@ from .theme_manager import ThemeManager
 DEBOUNCE_MS = 60
 # Após uma interação do usuário, ignora atualizações vindas do polling por este período
 INTERACTION_GRACE_S = 1.0
-WHEEL_STEP = 3
 
 ROW_HEADER, ROW_BODY, ROW_FOOTER, ROW_NAME = range(4)
+
+
+@dataclass
+class ViewOptions:
+    """Preferências compartilhadas por todos os controles (alteradas pela tela de Configurações)."""
+    wheel_step: int = 3
 
 
 class ControlView(ctk.CTkFrame, metaclass=ABCMeta):
@@ -35,11 +41,12 @@ class ControlView(ctk.CTkFrame, metaclass=ABCMeta):
 
     WIDTH = 96
 
-    def __init__(self, master, spec: ControlSpec, actions: ControlActions):
+    def __init__(self, master, spec: ControlSpec, actions: ControlActions, options: ViewOptions):
         # Cor explícita (par claro/escuro): "transparent" não acompanha a troca de tema
         super().__init__(master, fg_color=ThemeManager.color("CTkFrame", "top_fg_color"), corner_radius=8)
         self.spec = spec
         self.actions = actions
+        self.options = options
         self._last_interaction = 0.0
         self._stale = False  # widgets alterados pelo usuário desde o último render
 
@@ -117,8 +124,8 @@ class VolumeControlView(ControlView):
             self.slider = ctk.CTkSlider(self, orientation="vertical", from_=0, to=100, number_of_steps=100,
                                         command=self._on_slider_move)
             self.slider.grid(row=ROW_BODY, column=0, pady=6, sticky="ns")
-            self.slider.bind("<Button-4>", lambda e: self._on_wheel(+WHEEL_STEP))
-            self.slider.bind("<Button-5>", lambda e: self._on_wheel(-WHEEL_STEP))
+            self.slider.bind("<Button-4>", lambda e: self._on_wheel(+self.options.wheel_step))
+            self.slider.bind("<Button-5>", lambda e: self._on_wheel(-self.options.wheel_step))
         else:
             self.state_label = ctk.CTkLabel(self, font=ctk.CTkFont(size=16, weight="bold"))
             self.state_label.grid(row=ROW_BODY, column=0)
@@ -184,10 +191,12 @@ class VolumeControlView(ControlView):
 class EnumControlView(ControlView):
     """Seleção de opção para enumerações (ex.: Input Source, Auto-Mute Mode)."""
 
-    WIDTH = 132
+    WIDTH = 150
 
     def _build_widgets(self) -> None:
         self.menu = ctk.CTkOptionMenu(self, values=self.control.enum_items or [""], width=self.WIDTH - 12,
+                                      height=36, font=ctk.CTkFont(size=14),
+                                      dropdown_font=ctk.CTkFont(size=14),
                                       dynamic_resizing=False, command=self._on_select)
         self.menu.grid(row=ROW_BODY, column=0, padx=6)
 
@@ -203,8 +212,10 @@ class EnumControlView(ControlView):
 class ControlViewFactory:
     """Ponto único de criação dos controles visuais."""
 
-    def __init__(self, registry: Optional[Dict[ControlKind, Type[ControlView]]] = None):
+    def __init__(self, registry: Optional[Dict[ControlKind, Type[ControlView]]] = None,
+                 options: Optional[ViewOptions] = None):
         self._registry: Dict[ControlKind, Type[ControlView]] = dict(registry or {})
+        self.options = options or ViewOptions()
 
     def register(self, kind: ControlKind, view_class: Type[ControlView]) -> None:
         self._registry[kind] = view_class
@@ -214,7 +225,7 @@ class ControlViewFactory:
             view_class = self._registry[spec.kind]
         except KeyError:
             raise ValueError(f"Nenhuma visualização registrada para {spec.kind!r}") from None
-        return view_class(master, spec, actions)
+        return view_class(master, spec, actions, self.options)
 
     @classmethod
     def default(cls) -> "ControlViewFactory":

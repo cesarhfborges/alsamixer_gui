@@ -6,6 +6,7 @@ from src.core.amixer_parser import parse_scontents
 from src.core.interfaces import AudioController, MixerError
 from src.core.layout import ControlKind, ControlSpec, Section
 from src.core.models import Direction, SoundCard
+from src.core.settings import AppSettings, InMemorySettingsRepository
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
 
@@ -52,7 +53,8 @@ class MainWindowTest(unittest.TestCase):
     def setUp(self):
         from src.gui.main_window import AlsamixerGUI
         self.controller = FakeController()
-        self.app = AlsamixerGUI(self.controller, poll_interval_ms=0)
+        self.repo = InMemorySettingsRepository(AppSettings(poll_interval_ms=0, theme="Dark"))
+        self.app = AlsamixerGUI(self.controller, settings_repository=self.repo)
         self.app.update_idletasks()
 
     def tearDown(self):
@@ -188,6 +190,91 @@ class MainWindowTest(unittest.TestCase):
         source = next(c for c in self.controller.hda if c.is_enum)
         view = factory.create(self.app, ControlSpec(source, ControlKind.ENUM), self.app.actions)
         self.assertIsInstance(view, EnumControlView)
+
+
+@unittest.skipUnless(HAS_DISPLAY, "requer servidor gráfico")
+class SettingsIntegrationTest(unittest.TestCase):
+    def make_app(self, **settings):
+        from src.gui.main_window import AlsamixerGUI
+        self.repo = InMemorySettingsRepository(AppSettings(poll_interval_ms=0, theme="Dark", **settings))
+        self.app = AlsamixerGUI(FakeController(), settings_repository=self.repo)
+        self.addCleanup(self.app.destroy)
+        return self.app
+
+    def test_default_card_is_selected_on_start(self):
+        app = self.make_app(default_card="PCH")
+        self.assertEqual(app.current_card.id, "PCH")
+        self.assertEqual(app.card_select.get(), "2: HDA Intel PCH")
+
+    def test_last_used_card_and_tab_are_restored(self):
+        app = self.make_app(last_card="PCH", last_tab="Entrada")
+        self.assertEqual(app.current_card.id, "PCH")
+        self.assertEqual(app.tabview.get(), "Entrada")
+
+    def test_missing_default_card_falls_back_to_first(self):
+        app = self.make_app(default_card="NaoExiste")
+        self.assertEqual(app.current_card.id, "SoloCast")
+
+    def test_card_selection_is_saved_as_state(self):
+        app = self.make_app()
+        app._on_card_selected("2: HDA Intel PCH")
+        self.assertEqual(self.repo.settings.last_card, "PCH")
+
+    def test_close_saves_window_geometry(self):
+        from src.gui.main_window import AlsamixerGUI
+        repo = InMemorySettingsRepository(AppSettings(poll_interval_ms=0, theme="Dark"))
+        app = AlsamixerGUI(FakeController(), settings_repository=repo)
+        app.update()
+        app.close()
+        self.assertRegex(repo.settings.window_geometry, r"^\d+x\d+$")
+
+    def test_settings_dialog_has_a_field_for_every_preference(self):
+        from src.gui.settings_dialog import preference_attrs
+        app = self.make_app()
+        app.open_settings()
+        dialog = app.settings_dialog
+        self.assertEqual(sorted(dialog._selectors), sorted(preference_attrs()))
+        dialog.destroy()
+
+    def test_settings_dialog_saves_and_applies(self):
+        app = self.make_app()
+        app.open_settings()
+        dialog = app.settings_dialog
+        selector, mapping = dialog._selectors["default_card"]
+        selector.set("HDA Intel PCH")
+        dialog._selectors["wheel_step"][0].set("10%")
+        dialog._selectors["theme"][0].set("Claro")
+        dialog.save()
+        self.assertEqual(self.repo.settings.default_card, "PCH")
+        self.assertEqual(self.repo.settings.wheel_step, 10)
+        self.assertEqual(app.view_factory.options.wheel_step, 10)
+        import customtkinter as ctk
+        self.assertEqual(ctk.get_appearance_mode(), "Light")
+        ctk.set_appearance_mode("Dark")
+
+    def test_settings_dialog_cancel_keeps_settings(self):
+        app = self.make_app()
+        app.open_settings()
+        dialog = app.settings_dialog
+        dialog._selectors["wheel_step"][0].set("10%")
+        dialog.destroy()
+        self.assertEqual(app.settings.wheel_step, 3)
+
+    def test_restore_defaults(self):
+        app = self.make_app(wheel_step=10)
+        app.open_settings()
+        dialog = app.settings_dialog
+        dialog.restore_defaults()
+        self.assertEqual(dialog.selected_settings().wheel_step, 3)
+        self.assertEqual(dialog.selected_settings().poll_interval_ms, 2000)
+        dialog.destroy()
+
+    def test_unavailable_default_card_stays_visible(self):
+        app = self.make_app(default_card="USBAntiga")
+        app.open_settings()
+        selector, _ = app.settings_dialog._selectors["default_card"]
+        self.assertEqual(selector.get(), "USBAntiga (indisponível)")
+        app.settings_dialog.destroy()
 
 
 if __name__ == "__main__":
