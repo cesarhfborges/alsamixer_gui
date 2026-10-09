@@ -14,7 +14,7 @@ sem alterar a janela (Open/Closed).
 import time
 from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Optional, Type
+from typing import Callable, Dict, Optional, Type
 
 import customtkinter as ctk
 
@@ -35,6 +35,8 @@ ROW_HEADER, ROW_BODY, ROW_FOOTER, ROW_NAME = range(4)
 class ViewOptions:
     """Preferências compartilhadas por todos os controles (alteradas pela tela de Configurações)."""
     wheel_step: int = 3
+    # Informa se o mudo do controle está salvo para ser restaurado (exibe o indicador "salvo")
+    is_saved: Callable[[MixerControl, Direction], bool] = lambda control, direction: False
 
 
 class ControlView(ctk.CTkFrame, metaclass=ABCMeta):
@@ -54,7 +56,7 @@ class ControlView(ctk.CTkFrame, metaclass=ABCMeta):
         self.grid_columnconfigure(0, minsize=self.WIDTH, weight=1)
         self.grid_rowconfigure(ROW_HEADER, minsize=30)
         self.grid_rowconfigure(ROW_BODY, weight=1)
-        self.grid_rowconfigure(ROW_FOOTER, minsize=40)
+        self.grid_rowconfigure(ROW_FOOTER, minsize=56)
         self.grid_rowconfigure(ROW_NAME, minsize=44)
 
         self.name_label = ctk.CTkLabel(self, text=self.control.display_name, wraplength=self.WIDTH - 8,
@@ -133,7 +135,10 @@ class VolumeControlView(ControlView):
 
         if self.control.has_switch(self.direction):
             self.mute_checkbox = ctk.CTkCheckBox(self, text="Mudo", width=70, command=self._on_mute_toggle)
-            self.mute_checkbox.grid(row=ROW_FOOTER, column=0)
+            self.mute_checkbox.grid(row=ROW_FOOTER, column=0, sticky="n", pady=(4, 0))
+            self.saved_label = ctk.CTkLabel(self, text="", height=14, font=ctk.CTkFont(size=11),
+                                            text_color=ThemeManager.color("CTkButton", "fg_color"))
+            self.saved_label.grid(row=ROW_FOOTER, column=0, sticky="s")
 
     def _render(self, control: MixerControl) -> None:
         volume = control.volume(self.direction)
@@ -143,6 +148,12 @@ class VolumeControlView(ControlView):
         if self.mute_checkbox is not None:
             self.mute_checkbox.set(control.is_muted(self.direction))
         self._refresh_muted_look()
+        self.refresh_saved_badge()
+
+    def refresh_saved_badge(self) -> None:
+        if self.mute_checkbox is not None:
+            saved = self.options.is_saved(self.control, self.direction)
+            self.saved_label.configure(text="● salvo" if saved else "")
 
     @property
     def is_busy(self) -> bool:
@@ -181,6 +192,7 @@ class VolumeControlView(ControlView):
         self._touch()
         self._refresh_muted_look()
         self.actions.set_switch(self.control, self.direction, not self._is_muted_on_screen)
+        self.refresh_saved_badge()
 
     def destroy(self) -> None:
         if self._pending_job is not None:

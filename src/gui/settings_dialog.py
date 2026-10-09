@@ -58,6 +58,16 @@ def build_fields(cards: List[SoundCard], tray_available: bool = True) -> List[Se
         SettingField("start_hidden", "Bandeja do sistema", "Iniciar minimizado na bandeja",
                      "Ao abrir, exibe apenas o ícone na bandeja (requer \"Manter na bandeja\").",
                      [("Sim", True), ("Não", False)]),
+        SettingField("autostart", "Sistema", "Iniciar com o sistema",
+                     "Abre o app ao entrar no sistema, só com o ícone na bandeja (ativa a bandeja).",
+                     [("Sim", True), ("Não", False)]),
+        SettingField("restore_state", "Sistema", "Restaurar estado de mudo ao iniciar",
+                     "Reaplica o mudo/ligado que você escolheu no app (ex.: manter o S/PDIF ligado).",
+                     [("Sim", True), ("Não", False)]),
+        SettingField("keep_state", "Sistema", "Manter estado aplicado",
+                     "Se o sistema (ex.: PipeWire após o login ou retorno da suspensão) alterar um mudo salvo, "
+                     "o app o reaplica. Mudanças feitas pelo alsamixer do terminal também são desfeitas.",
+                     [("Sim", True), ("Não", False)]),
         SettingField("poll_interval_ms", "Comportamento", "Atualização automática",
                      "Frequência de leitura do mixer para refletir mudanças externas (teclas de volume, outros apps).",
                      [("Desligada" if ms == 0 else f"A cada {ms // 1000} s", ms) for ms in POLL_INTERVALS_MS]),
@@ -71,7 +81,8 @@ class SettingsDialog(ctk.CTkToplevel):
     WIDTH, HEIGHT = 680, 600
 
     def __init__(self, master, settings: AppSettings, cards: List[SoundCard],
-                 on_save: Callable[[AppSettings], None], location: str = "", tray_available: bool = True):
+                 on_save: Callable[[AppSettings], None], location: str = "", tray_available: bool = True,
+                 saved_states: int = 0, on_clear_states: Callable[[], None] = lambda: None):
         super().__init__(master)
         self.title("Configurações")
         self.minsize(520, 420)
@@ -80,6 +91,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         self._settings = settings
         self._on_save = on_save
+        self._on_clear_states = on_clear_states
         self._selectors: Dict[str, Tuple[Select, Dict[str, Any]]] = {}
         self._label_font = ctk.CTkFont(size=14, weight="bold")
 
@@ -96,6 +108,8 @@ class SettingsDialog(ctk.CTkToplevel):
                 group = field.group
                 self._add_group_title(group)
             self._add_field(field)
+            if field.attr == "keep_state":
+                self._add_saved_states_row(saved_states)
 
         self._build_footer(location)
         self.after(100, self._make_modal)
@@ -116,6 +130,36 @@ class SettingsDialog(ctk.CTkToplevel):
                      text_color=ThemeManager.color("CTkButton", "fg_color")).grid(
             row=self._next_row(), column=0, columnspan=2, sticky="w", padx=8, pady=(14, 2))
 
+    def _add_row(self, label: str, description: str) -> ctk.CTkFrame:
+        """Linha padrão da tela: rótulo + descrição à esquerda; o controle vai na coluna 1."""
+        row = ctk.CTkFrame(self.body, fg_color=ThemeManager.color("CTkFrame", "top_fg_color"), corner_radius=8)
+        row.grid(row=self._next_row(), column=0, sticky="ew", padx=4, pady=3)
+        row.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(row, text=label, font=self._label_font, anchor="w").grid(
+            row=0, column=0, sticky="w", padx=12, pady=(10, 0))
+        row.description_label = ctk.CTkLabel(row, text=description, text_color="gray55", anchor="w",
+                                             justify="left", wraplength=300)
+        row.description_label.grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
+        return row
+
+    def _add_saved_states_row(self, count: int) -> None:
+        row = self._add_row("Estados salvos", self._saved_states_text(count))
+        self.clear_states_button = ctk.CTkButton(row, text="Limpar", width=230, height=38,
+                                                 font=ctk.CTkFont(size=14), state="normal" if count else "disabled",
+                                                 command=lambda: self._clear_states(row))
+        self.clear_states_button.grid(row=0, column=1, rowspan=2, padx=12, pady=10)
+
+    @staticmethod
+    def _saved_states_text(count: int) -> str:
+        if not count:
+            return "Nenhum. Ligue/desligue o mudo de um controle para que ele seja lembrado."
+        return f"{count} controle(s) com mudo/ligado lembrado. \"Limpar\" esquece todos."
+
+    def _clear_states(self, row) -> None:
+        self._on_clear_states()
+        row.description_label.configure(text=self._saved_states_text(0))
+        self.clear_states_button.configure(state="disabled")
+
     def _add_field(self, field: SettingField) -> None:
         """Cria uma linha de configuração: rótulo + descrição à esquerda, select à direita."""
         choices = list(field.choices)
@@ -125,15 +169,7 @@ class SettingsDialog(ctk.CTkToplevel):
             choices.append((f"{current} (indisponível)", current))
         label_to_value = {label: value for label, value in choices}
 
-        row = ctk.CTkFrame(self.body, fg_color=ThemeManager.color("CTkFrame", "top_fg_color"), corner_radius=8)
-        row.grid(row=self._next_row(), column=0, sticky="ew", padx=4, pady=3)
-        row.grid_columnconfigure(0, weight=1)
-
-        ctk.CTkLabel(row, text=field.label, font=self._label_font, anchor="w").grid(
-            row=0, column=0, sticky="w", padx=12, pady=(10, 0))
-        ctk.CTkLabel(row, text=field.description, text_color="gray55", anchor="w", justify="left",
-                     wraplength=300).grid(row=1, column=0, sticky="w", padx=12, pady=(0, 10))
-
+        row = self._add_row(field.label, field.description)
         selector = Select(row, values=list(label_to_value), width=230)
         selector.set(next(label for label, value in choices if value == current))
         selector.grid(row=0, column=1, rowspan=2, padx=12, pady=10)

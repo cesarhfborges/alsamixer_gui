@@ -11,6 +11,7 @@ import threading
 from typing import Callable, Optional
 
 SHOW_MESSAGE = b"show"
+PING_MESSAGE = b"ping"  # só verifica se há instância, sem mostrar a janela
 
 
 class SingleInstance:
@@ -19,20 +20,23 @@ class SingleInstance:
         self._server: Optional[socket.socket] = None
         self.on_message: Callable[[bytes], None] = lambda message: None
 
-    def notify_running_instance(self) -> bool:
-        """Pede para a instância existente se mostrar. True se havia uma instância."""
+    def notify_running_instance(self, message: bytes = SHOW_MESSAGE) -> bool:
+        """Envia `message` à instância existente. True se havia uma instância."""
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
                 client.settimeout(1)
                 client.connect(self.address)
-                client.sendall(SHOW_MESSAGE)
+                client.sendall(message)
             return True
         except OSError:
             return False
 
-    def acquire(self) -> bool:
-        """Torna esta a instância principal. False se outra já está em execução."""
-        if self.notify_running_instance():
+    def acquire(self, show_existing: bool = True) -> bool:
+        """Torna esta a instância principal. False se outra já está em execução.
+
+        Com `show_existing`, pede para a instância existente mostrar a janela.
+        """
+        if self.notify_running_instance(SHOW_MESSAGE if show_existing else PING_MESSAGE):
             return False
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:

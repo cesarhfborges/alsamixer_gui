@@ -1,3 +1,4 @@
+import time
 from dataclasses import replace
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -5,8 +6,11 @@ import customtkinter as ctk
 
 from src.core.interfaces import AudioController, MixerError
 from src.core.layout import Section, build_layout
-from src.core.models import MixerControl, SoundCard
+from src.core.autostart import AutostartManager
+from src.core.mixer_state import InMemoryMixerStateRepository, MixerStateStore, SwitchState
+from src.core.models import Direction, MixerControl, SoundCard
 from src.core.settings import AppSettings, InMemorySettingsRepository, SettingsRepository
+from src.core.state_keeper import StateKeeper
 from .actions import CardActions
 from .control_panel import ControlPanel
 from .control_widgets import ControlViewFactory
@@ -22,12 +26,20 @@ DEFAULT_SIZE = (960, 620)
 
 TrayFactory = Callable[..., TrayIcon]
 
+KEEP_STATE_INTERVAL_MS = 2000
+# Sem "Manter estado", ainda vigia por um tempo após abrir: o WirePlumber pode iniciar depois do app
+STARTUP_RESTORE_WINDOW_S = 60
+
 
 class AlsamixerGUI(ctk.CTk):
     def __init__(self, audio_controller: AudioController,
                  settings_repository: Optional[SettingsRepository] = None,
                  view_factory: Optional[ControlViewFactory] = None,
-                 tray_factory: TrayFactory = create_tray_icon):
+                 tray_factory: TrayFactory = create_tray_icon,
+                 mixer_state_store: Optional[MixerStateStore] = None,
+                 autostart: Optional[AutostartManager] = None,
+                 start_in_tray: bool = False):
+        """`autostart=None` não mexe em ~/.config/autostart (testes); `start_in_tray` vem do --autostart."""
         super().__init__()
         self.audio_controller = audio_controller
         self.settings_repository = settings_repository or InMemorySettingsRepository()
@@ -38,7 +50,14 @@ class AlsamixerGUI(ctk.CTk):
             card_provider=lambda: self.current_card.index if self.current_card else None,
             on_error=self._on_action_error,
             on_success=lambda: self._set_status(""),
+            on_switch=self._remember_switch,
         )
+        # "is None" e não "or": um store vazio tem len() == 0 e seria considerado falso
+        self.state_store = (mixer_state_store if mixer_state_store is not None
+                            else MixerStateStore(InMemoryMixerStateRepository()))
+        self.state_keeper = StateKeeper(audio_controller, self.state_store)
+        self.autostart = autostart
+        self.view_factory.options.is_saved = self._is_switch_saved
         self.dispatcher = UiDispatcher(self)
         self.tray = tray_factory(on_toggle=self.toggle_window, on_quit=self.quit_app, post=self.dispatcher.post)
 
@@ -50,6 +69,8 @@ class AlsamixerGUI(ctk.CTk):
         self._applied_scale: Optional[float] = None
         self._explicit_position = False
         self._frame_offset: Optional[Tuple[int, int]] = None  # (borda, barra de título) do gerenciador de janelas
+        self._keeper_job: Optional[str] = None
+        self._keeper_deadline = time.monotonic() + STARTUP_RESTORE_WINDOW_S
 
         self.title("Python Alsamixer GUI")
         self.minsize(560, 480)
@@ -70,8 +91,10 @@ class AlsamixerGUI(ctk.CTk):
             self.after(300, self._measure_frame_offset)
         self.reload_cards(initial=True)
         self.tabview.set(self.settings.initial_tab())
+        if self.settings.restore_state:
+            self.enforce_saved_state()  # reaplica e atualiza a tela, avisando na barra de status
 
-        if self.settings.start_hidden and self.tray.running:
+        if (self.settings.start_hidden or start_in_tray) and self.tray.running:
             self.withdraw()
 
     # ------------------------------------------------------------------ layout
@@ -211,6 +234,13 @@ class AlsamixerGUI(ctk.CTk):
             self._applied_scale = settings.ui_scale
         self.view_factory.options.wheel_step = settings.wheel_step
         self._restart_polling()
+        self._restart_keeper()
+        if self.autostart is not None:
+            try:
+                self.autostart.sync(settings.autostart)
+            except OSError as exc:
+                self.after_idle(lambda: self._set_status(f"Não foi possível configurar o início automático: {exc}",
+                                                         error=True))
         if settings.tray_enabled and self.tray.available:
             self.tray.start()
         else:
@@ -222,9 +252,14 @@ class AlsamixerGUI(ctk.CTk):
             return
         self.settings_dialog = SettingsDialog(self, self.settings, self.cards, on_save=self._on_settings_saved,
                                               location=self.settings_repository.location,
-                                              tray_available=self.tray.available)
+                                              tray_available=self.tray.available,
+                                              saved_states=len(self.state_store),
+                                              on_clear_states=self.clear_saved_states)
 
     def _on_settings_saved(self, settings: AppSettings) -> None:
+        if settings.autostart and self.tray.available and not settings.tray_enabled:
+            # Iniciar com o sistema = ficar na bandeja (é assim que o estado continua sendo mantido)
+            settings = replace(settings, tray_enabled=True)
         self.apply_settings(settings)
         self._save_settings()
         if settings.tray_enabled and not self.tray.available:
@@ -325,9 +360,62 @@ class AlsamixerGUI(ctk.CTk):
         if self._poll_job is not None:
             self.after_cancel(self._poll_job)
             self._poll_job = None
+        if self._keeper_job is not None:
+            self.after_cancel(self._keeper_job)
+            self._keeper_job = None
         self.dispatcher.stop()
         self.tray.stop()
         super().destroy()
+
+    # ---------------------------------------------------- estado salvo do mixer
+    def _remember_switch(self, control: MixerControl, direction: Direction, enabled: bool) -> None:
+        """Mudo alterado pelo usuário no app: vira o estado a ser restaurado/mantido."""
+        if self.current_card is not None:
+            self.state_store.remember(self.current_card.id, control.key, direction, enabled)
+
+    def _is_switch_saved(self, control: MixerControl, direction: Direction) -> bool:
+        return self.current_card is not None and \
+            self.state_store.get(self.current_card.id, control.key, direction) is not None
+
+    def clear_saved_states(self) -> None:
+        self.state_store.clear()
+        for panel in self.panels.values():
+            for view in panel.views.values():
+                if hasattr(view, "refresh_saved_badge"):
+                    view.refresh_saved_badge()
+        self._set_status("Estados salvos removidos.")
+
+    def _restart_keeper(self) -> None:
+        if self._keeper_job is not None:
+            self.after_cancel(self._keeper_job)
+            self._keeper_job = None
+        if self.settings.keep_state or self.settings.restore_state:
+            self._keeper_job = self.after(KEEP_STATE_INTERVAL_MS, self._keeper_tick)
+
+    def _keeper_tick(self) -> None:
+        """Roda inclusive com a janela escondida na bandeja (é aí que o login/suspensão acontecem)."""
+        self._keeper_job = None
+        keep = self.settings.keep_state
+        in_startup_window = self.settings.restore_state and time.monotonic() < self._keeper_deadline
+        if not (keep or in_startup_window):
+            return
+        self.enforce_saved_state()
+        self._keeper_job = self.after(KEEP_STATE_INTERVAL_MS, self._keeper_tick)
+
+    def enforce_saved_state(self) -> List[SwitchState]:
+        result = self.state_keeper.enforce()
+        if result.changed and hasattr(self, "status_label"):
+            names = ", ".join(sorted({self._state_label(s) for s in result.corrected}))
+            self._set_status(f"Estado restaurado (alterado pelo sistema): {names}")
+            if not self.is_hidden:
+                self.refresh_controls()
+        return result.corrected
+
+    @staticmethod
+    def _state_label(state: SwitchState) -> str:
+        name, _, index = state.control.rpartition(",")
+        display = MixerControl(name=name, index=int(index) if index.isdigit() else 0).display_name
+        return f"{display} ({state.card})"
 
     # ------------------------------------------------------------------ status
     def _on_action_error(self, control: MixerControl, error: MixerError) -> None:

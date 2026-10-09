@@ -7,13 +7,13 @@ Arquivo: $XDG_CONFIG_HOME/alsamixer-gui/settings.json (padrão ~/.config/alsamix
 """
 import json
 import os
-import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, fields, replace
 from typing import List, Optional
 
 from .layout import Section
 from .models import SoundCard
+from .storage import atomic_write_json, config_dir
 
 SETTINGS_VERSION = 1
 LAST_USED = ""  # valor de default_card/default_tab que significa "última utilizada"
@@ -36,6 +36,9 @@ class AppSettings:
     remember_window: bool = True    # restaura tamanho/posição da janela
     tray_enabled: bool = False      # ícone na bandeja; fechar a janela apenas a esconde
     start_hidden: bool = False      # com a bandeja ativa, inicia só com o ícone
+    autostart: bool = False         # inicia com o sistema (~/.config/autostart)
+    restore_state: bool = True      # reaplica os estados de mudo salvos ao iniciar
+    keep_state: bool = True         # reaplica se o sistema (ex.: PipeWire) alterar um estado salvo
 
     # --- Estado (automático) --------------------------------------------
     last_card: Optional[str] = None
@@ -56,6 +59,9 @@ class AppSettings:
             "remember_window": isinstance(self.remember_window, bool),
             "tray_enabled": isinstance(self.tray_enabled, bool),
             "start_hidden": isinstance(self.start_hidden, bool),
+            "autostart": isinstance(self.autostart, bool),
+            "restore_state": isinstance(self.restore_state, bool),
+            "keep_state": isinstance(self.keep_state, bool),
             "last_card": self.last_card is None or isinstance(self.last_card, str),
             "last_tab": self.last_tab is None or self.last_tab in tabs,
             "window_geometry": self.window_geometry is None or isinstance(self.window_geometry, str),
@@ -117,8 +123,7 @@ class InMemorySettingsRepository(SettingsRepository):
 
 
 def default_settings_path() -> str:
-    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
-    return os.path.join(base, "alsamixer-gui", "settings.json")
+    return os.path.join(config_dir(), "settings.json")
 
 
 class JsonSettingsRepository(SettingsRepository):
@@ -138,15 +143,4 @@ class JsonSettingsRepository(SettingsRepository):
             return AppSettings()
 
     def save(self, settings: AppSettings) -> None:
-        directory = os.path.dirname(self.path)
-        os.makedirs(directory, exist_ok=True)
-        # Escrita atômica: grava em arquivo temporário e substitui
-        fd, tmp = tempfile.mkstemp(dir=directory, prefix=".settings-", suffix=".json")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(settings.to_dict(), fh, indent=2, ensure_ascii=False)
-            os.replace(tmp, self.path)
-        except BaseException:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-            raise
+        atomic_write_json(self.path, settings.to_dict())
