@@ -1,3 +1,18 @@
+# 🎛️ AlsaMixer
+
+Aplicação para gerenciamento e controle de áudio via interface gráfica/script integrado ao ALSA.
+
+---
+
+## 📸 Demonstração
+
+![Interface Principal](https://via.placeholder.com/800x450.png?text=Preview+Principal)
+*Visão geral da interface do sistema.*
+![Interface Principal](https://via.placeholder.com/800x450.png?text=Preview+Principal)
+*Visão geral da interface do sistema.*
+![Interface Principal](https://via.placeholder.com/800x450.png?text=Preview+Principal)
+*Visão geral da interface do sistema.*
+
 # 🚀 Configuração do Ambiente Virtual (venv) e Dependências
 
 Este guia prático explica como configurar o ambiente virtual, ativar o `venv`, instalar as dependências do projeto e atualizar o arquivo de requerimentos.
