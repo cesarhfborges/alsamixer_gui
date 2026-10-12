@@ -15,6 +15,7 @@ from .actions import CardActions
 from .control_panel import ControlPanel
 from .control_widgets import ControlViewFactory
 from .dispatcher import UiDispatcher
+from .popup_menu import PopupMenu
 from .select import Select
 from .settings_dialog import SettingsDialog
 from .theme_manager import ThemeManager
@@ -59,7 +60,9 @@ class AlsamixerGUI(ctk.CTk):
         self.autostart = autostart
         self.view_factory.options.is_saved = self._is_switch_saved
         self.dispatcher = UiDispatcher(self)
-        self.tray = tray_factory(on_toggle=self.toggle_window, on_quit=self.quit_app, post=self.dispatcher.post)
+        self.tray = tray_factory(on_toggle=self.toggle_window, on_quit=self.quit_app, post=self.dispatcher.post,
+                                 on_settings=self._open_settings_from_tray, on_menu=self.show_tray_menu)
+        self.tray_menu: Optional[PopupMenu] = None
 
         self.cards: List[SoundCard] = []
         self.current_card: Optional[SoundCard] = None
@@ -72,7 +75,10 @@ class AlsamixerGUI(ctk.CTk):
         self._keeper_job: Optional[str] = None
         self._keeper_deadline = time.monotonic() + STARTUP_RESTORE_WINDOW_S
 
+        from src.version import __version__
         self.title("Python Alsamixer GUI")
+        self.title_suffix = f"v{__version__}"
+        self._set_window_icon()
         self.minsize(560, 480)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(2, weight=1)
@@ -97,6 +103,15 @@ class AlsamixerGUI(ctk.CTk):
         if (self.settings.start_hidden or start_in_tray) and self.tray.running:
             self.withdraw()
 
+    def _set_window_icon(self) -> None:
+        try:
+            from PIL import ImageTk
+            from .icon import render_icon
+            self._icon_images = [ImageTk.PhotoImage(render_icon(s)) for s in (64, 32)]
+            self.iconphoto(True, *self._icon_images)
+        except Exception:
+            pass  # sem Pillow: usa o ícone padrão
+
     # ------------------------------------------------------------------ layout
     def _build_header(self) -> None:
         header = ctk.CTkFrame(self, fg_color="transparent")
@@ -104,9 +119,16 @@ class AlsamixerGUI(ctk.CTk):
         header.grid_columnconfigure(0, weight=1)
         self.title_label = ctk.CTkLabel(header, text="Alsamixer Control", font=ctk.CTkFont(size=20, weight="bold"))
         self.title_label.grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(header, text=self.title_suffix, text_color="gray55").grid(row=0, column=0, sticky="w",
+                                                                              padx=(200, 0))
         self.settings_button = ctk.CTkButton(header, text="⚙  Configurações", width=150, height=36,
                                              font=ctk.CTkFont(size=14), command=self.open_settings)
         self.settings_button.grid(row=0, column=1)
+        # Encerra de verdade (o "X" da janela só esconde quando a bandeja está ativa)
+        self.quit_button = ctk.CTkButton(header, text="⏻  Encerrar", width=120, height=36,
+                                         font=ctk.CTkFont(size=14), fg_color="#b94a48", hover_color="#953b39",
+                                         command=self.quit_app)
+        self.quit_button.grid(row=0, column=2, padx=(8, 0))
 
     def _build_card_selector(self) -> None:
         toolbar = ctk.CTkFrame(self)
@@ -204,6 +226,21 @@ class AlsamixerGUI(ctk.CTk):
         else:
             self.hide_window()
 
+    def tray_menu_items(self):
+        return [("Ocultar janela" if not self.is_hidden else "Mostrar janela", self.toggle_window),
+                ("Configurações", self._open_settings_from_tray),
+                None,
+                ("Encerrar", self.quit_app)]
+
+    def show_tray_menu(self, x: int, y: int) -> None:
+        if self.tray_menu is not None and self.tray_menu.winfo_exists():
+            self.tray_menu.close()
+        self.tray_menu = PopupMenu(self, self.tray_menu_items(), x, y)
+
+    def _open_settings_from_tray(self) -> None:
+        self.show_window()
+        self.open_settings()
+
     def close(self) -> None:
         """Botão fechar: com a bandeja ativa só esconde; senão encerra."""
         if self.tray.running:
@@ -235,6 +272,10 @@ class AlsamixerGUI(ctk.CTk):
         self.view_factory.options.wheel_step = settings.wheel_step
         self._restart_polling()
         self._restart_keeper()
+        if self.autostart is not None and settings.autostart and self.autostart.disabled_by_user():
+            # Desligado pelo "Aplicativos de inicialização" do Mint: a configuração acompanha
+            self.settings = settings = replace(settings, autostart=False)
+            self.after_idle(self._save_settings)
         if self.autostart is not None:
             try:
                 self.autostart.sync(settings.autostart)
@@ -260,6 +301,8 @@ class AlsamixerGUI(ctk.CTk):
         if settings.autostart and self.tray.available and not settings.tray_enabled:
             # Iniciar com o sistema = ficar na bandeja (é assim que o estado continua sendo mantido)
             settings = replace(settings, tray_enabled=True)
+        if settings.autostart and self.autostart is not None and self.autostart.disabled_by_user():
+            self.autostart.enable()  # reativado explicitamente pelo usuário no app
         self.apply_settings(settings)
         self._save_settings()
         if settings.tray_enabled and not self.tray.available:

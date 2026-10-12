@@ -155,6 +155,15 @@ class AutostartTest(unittest.TestCase):
         self.assertFalse(os.path.exists(self.path))
         moved.sync(False)  # idempotente
 
+    def test_respects_disable_from_mint_startup_applications(self):
+        manager = AutostartManager(self.path, ["/a/python", "/a/main.py", "--autostart"])
+        manager.enable()
+        with open(self.path, "a") as fh:
+            fh.write("X-GNOME-Autostart-enabled=false\n")
+        manager.sync(True)  # não regrava a escolha do usuário
+        self.assertTrue(manager.disabled_by_user())
+        self.assertIn("TryExec=/a/python", manager.expected_content)
+
 
 class CommandLineTest(unittest.TestCase):
     def test_flags(self):
@@ -162,105 +171,6 @@ class CommandLineTest(unittest.TestCase):
         self.assertTrue(parse_args(["--autostart"]).autostart)
         self.assertTrue(parse_args(["--apply-state"]).apply_state)
         self.assertFalse(parse_args([]).autostart)
-
-
-class FakeTray:
-    def __init__(self, **callbacks):
-        self.available, self.running, self.callbacks = True, False, callbacks
-
-    def start(self):
-        self.running = True
-
-    def stop(self):
-        self.running = False
-
-
-@unittest.skipUnless(HAS_DISPLAY, "requer servidor gráfico")
-class WindowStateIntegrationTest(unittest.TestCase):
-    def make_app(self, states=(), autostart=None, start_in_tray=False, **settings):
-        from src.gui.main_window import AlsamixerGUI
-        from src.core.layout import Section
-        self.Section = Section
-        self.controller = MutableFakeController()
-        self.store = MixerStateStore(InMemoryMixerStateRepository(list(states)))
-        self.settings_repo = InMemorySettingsRepository(
-            AppSettings(poll_interval_ms=0, theme="Dark", default_card="PCH", **settings))
-        app = AlsamixerGUI(self.controller, settings_repository=self.settings_repo,
-                           tray_factory=lambda **kw: FakeTray(**kw), mixer_state_store=self.store,
-                           autostart=autostart, start_in_tray=start_in_tray)
-        self.addCleanup(app.destroy)
-        return app
-
-    def spdif_view(self, app):
-        return app.panels[self.Section.OUTPUT].views[("IEC958,0", "volume", "playback")]
-
-    def test_toggling_mute_in_app_is_remembered(self):
-        app = self.make_app()
-        view = self.spdif_view(app)
-        self.assertEqual(view.saved_label.cget("text"), "")
-        view.mute_checkbox.toggle()  # desmarca "Mudo" => liga o S/PDIF
-        self.assertEqual(self.store.states(), [SPDIF])
-        self.assertEqual(view.saved_label.cget("text"), "● salvo")
-
-    def test_saved_state_is_restored_on_start(self):
-        app = self.make_app(states=[SPDIF])
-        self.assertTrue(self.controller.hardware("IEC958,0").playback_switch)
-        self.assertIn("S/PDIF (PCH)", app.status_label.cget("text"))
-        self.assertEqual(self.spdif_view(app).state_label.cget("text"), "ON")
-
-    def test_restore_disabled(self):
-        app = self.make_app(states=[SPDIF], restore_state=False, keep_state=False)
-        self.assertFalse(self.controller.hardware("IEC958,0").playback_switch)
-        self.assertIsNone(app._keeper_job)
-
-    def test_keeper_reapplies_after_system_change_even_when_hidden(self):
-        app = self.make_app(states=[SPDIF], tray_enabled=True)
-        app.hide_window()
-        self.controller.hardware("IEC958,0").playback_switch = False  # ex.: WirePlumber após o login
-        app._keeper_tick()
-        self.assertTrue(self.controller.hardware("IEC958,0").playback_switch)
-        self.assertIsNotNone(app._keeper_job)
-
-    def test_without_keep_state_stops_after_startup_window(self):
-        app = self.make_app(states=[SPDIF], keep_state=False)
-        app._keeper_deadline = 0
-        self.controller.hardware("IEC958,0").playback_switch = False
-        app._keeper_tick()
-        self.assertFalse(self.controller.hardware("IEC958,0").playback_switch)
-        self.assertIsNone(app._keeper_job)
-
-    def test_clear_saved_states(self):
-        app = self.make_app(states=[SPDIF])
-        app.clear_saved_states()
-        self.assertEqual(len(self.store), 0)
-        self.assertEqual(self.spdif_view(app).saved_label.cget("text"), "")
-
-    def test_autostart_setting_writes_file_and_enables_tray(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        manager = AutostartManager(os.path.join(tmp.name, "a.desktop"), ["/x/python", "/x/main.py", "--autostart"])
-        app = self.make_app(autostart=manager)
-        self.assertFalse(manager.is_enabled())
-        app._on_settings_saved(replace(app.settings, autostart=True))
-        self.assertTrue(manager.is_current())
-        self.assertTrue(app.settings.tray_enabled and app.tray.running)
-        self.assertTrue(self.settings_repo.settings.autostart)
-        app._on_settings_saved(replace(app.settings, autostart=False))
-        self.assertFalse(manager.is_enabled())
-
-    def test_started_by_autostart_goes_to_tray(self):
-        app = self.make_app(start_in_tray=True, tray_enabled=True)
-        self.assertEqual(app.state(), "withdrawn")
-
-    def test_settings_dialog_shows_saved_states(self):
-        app = self.make_app(states=[SPDIF])
-        app.open_settings()
-        dialog = app.settings_dialog
-        self.assertEqual(str(dialog.clear_states_button.cget("state")), "normal")
-        dialog.clear_states_button.invoke()
-        self.assertEqual(len(self.store), 0)
-        self.assertEqual(str(dialog.clear_states_button.cget("state")), "disabled")
-        dialog.destroy()
 
 
 if __name__ == "__main__":

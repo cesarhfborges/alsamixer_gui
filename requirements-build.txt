@@ -1,0 +1,4 @@
+# Dependências só para gerar o binário/.deb (além de requirements.txt)
+pyinstaller==6.22.3
+setuptools-scm==10.3.4
+vcs-versioning==2.6.0

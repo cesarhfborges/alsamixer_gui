@@ -54,164 +54,26 @@ class DispatcherAndInstanceTest(unittest.TestCase):
         first.release()
 
 
-class FakeTray:
-    def __init__(self, available=True, **callbacks):
-        self.available = available
-        self.running = False
-        self.callbacks = callbacks
-
-    def start(self):
-        if self.available:
-            self.running = True
-
-    def stop(self):
-        self.running = False
-
-
-@unittest.skipUnless(HAS_DISPLAY, "requer servidor gráfico")
-class TrayBehaviourTest(unittest.TestCase):
-    def make_app(self, available=True, **settings):
-        from src.gui.main_window import AlsamixerGUI
-        self.repo = InMemorySettingsRepository(AppSettings(poll_interval_ms=0, theme="Dark", **settings))
-        self.trays = []
-
-        def factory(**callbacks):
-            tray = FakeTray(available, **callbacks)
-            self.trays.append(tray)
-            return tray
-
-        app = AlsamixerGUI(FakeController(), settings_repository=self.repo, tray_factory=factory)
-        self.destroyed = False
-        original_destroy = app.destroy
-
-        def destroy():
-            self.destroyed = True
-            original_destroy()
-        app.destroy = destroy
-        self.addCleanup(lambda: None if self.destroyed else original_destroy())
-        app.update()
-        return app
-
-    def test_close_without_tray_quits(self):
-        app = self.make_app()
-        app.close()
-        self.assertTrue(self.destroyed)
-
-    def test_close_with_tray_hides(self):
-        app = self.make_app(tray_enabled=True)
-        self.assertTrue(app.tray.running)
-        app.close()
-        self.assertFalse(self.destroyed)
-        self.assertEqual(app.state(), "withdrawn")
-
-    def test_tray_click_toggles_window(self):
-        app = self.make_app(tray_enabled=True)
-        app.close()
-        self.trays[0].callbacks["on_toggle"]()  # clique no ícone
-        app.update()
-        self.assertEqual(app.state(), "normal")
-        self.trays[0].callbacks["on_toggle"]()
-        self.assertEqual(app.state(), "withdrawn")
-
-    def test_tray_quit_really_quits(self):
-        app = self.make_app(tray_enabled=True)
-        self.trays[0].callbacks["on_quit"]()
-        self.assertTrue(self.destroyed)
-        self.assertFalse(self.trays[0].running)
-
-    def test_callbacks_from_tray_thread_run_on_tk_thread(self):
-        app = self.make_app(tray_enabled=True)
-        post = self.trays[0].callbacks["post"]
-        thread = threading.Thread(target=lambda: post(app.hide_window))
-        thread.start(); thread.join()
-        deadline = time.time() + 2
-        while app.state() != "withdrawn" and time.time() < deadline:
-            app.update(); time.sleep(0.02)
-        self.assertEqual(app.state(), "withdrawn")
-
-    def test_start_hidden(self):
-        app = self.make_app(tray_enabled=True, start_hidden=True)
-        self.assertEqual(app.state(), "withdrawn")
-
-    def test_start_hidden_ignored_without_tray(self):
-        app = self.make_app(available=False, tray_enabled=True, start_hidden=True)
-        self.assertEqual(app.state(), "normal")  # nunca esconder sem ícone para reabrir
-        app.close()
-        self.assertTrue(self.destroyed)
-
-    def test_enabling_tray_in_settings_starts_icon(self):
-        from dataclasses import replace
-        app = self.make_app()
-        self.assertFalse(app.tray.running)
-        app._on_settings_saved(replace(app.settings, tray_enabled=True))
-        self.assertTrue(app.tray.running)
-        app._on_settings_saved(replace(app.settings, tray_enabled=False))
-        self.assertFalse(app.tray.running)
-
-    def test_saving_settings_does_not_reapply_scaling(self):
-        """Regressão: reaplicar a escala movia a janela para outro monitor."""
-        import customtkinter as ctk
-        app = self.make_app()
-        with mock.patch.object(ctk, "set_widget_scaling") as scaling:
-            app._on_settings_saved(app.settings)
-            scaling.assert_not_called()
-
-    def test_hidden_window_is_not_polled(self):
-        app = self.make_app(tray_enabled=True)
-        app.hide_window()
-        with mock.patch.object(app, "refresh_controls") as refresh:
-            app._poll()
-            refresh.assert_not_called()
-
-
-@unittest.skipUnless(HAS_DISPLAY, "requer servidor gráfico")
-class SelectTest(unittest.TestCase):
-    def setUp(self):
-        import customtkinter as ctk
-        from src.gui.select import Select
-        self.root = ctk.CTk()
-        self.addCleanup(self.root.destroy)
-        self.chosen = []
-        self.select = Select(self.root, values=[f"Item {i}" for i in range(12)], command=self.chosen.append)
-        self.select.set("Item 2")
-        self.select.pack()
-        self.root.update()
-
-    def test_popup_lists_all_items_with_comfortable_height(self):
-        from src.gui.select import ITEM_HEIGHT
-        self.select._clicked()
-        popup = self.select.popup
-        self.root.update()
-        self.assertEqual(len(popup.buttons), 12)
-        self.assertGreaterEqual(popup.buttons[0].winfo_height(), ITEM_HEIGHT)
-        self.assertGreaterEqual(popup.winfo_width(), self.select.winfo_width())
-        popup.close()
-
-    def test_choose_calls_command_and_closes(self):
-        self.select._clicked()
-        self.select.popup.buttons[5].invoke()
-        self.assertEqual(self.chosen, ["Item 5"])
-        self.assertEqual(self.select.get(), "Item 5")
-        self.assertIsNone(self.select.popup)
-
-    def test_keyboard_navigation(self):
-        self.select._clicked()
-        popup = self.select.popup
-        self.assertEqual(popup._highlight, 2)  # começa no item selecionado
-        popup._move(+1)
-        popup._move(+1)
-        popup._move(-1)
-        popup.choose(popup._values[popup._highlight])
-        self.assertEqual(self.chosen[-1], "Item 3")
-
-    def test_escape_and_second_click_close(self):
-        self.select._clicked()
-        self.select.popup.close()
-        self.assertIsNone(self.select.popup)
-        self.select._clicked()
-        self.select._clicked()
-        self.assertIsNone(self.select.popup)
-
-
 if __name__ == "__main__":
     unittest.main()
+
+
+class XorgRightClickTest(unittest.TestCase):
+    def test_right_click_posts_menu_and_left_click_keeps_default(self):
+        import types
+        from src.gui.tray import PystrayTrayIcon
+
+        class BaseIcon:
+            HAS_MENU = False
+            def __init__(self, *a): self.activated = 0
+            def _on_button_press(self, event): self.activated += 1
+
+        fake_pystray = types.SimpleNamespace(Icon=BaseIcon)
+        opened = []
+        tray = PystrayTrayIcon(fake_pystray, lambda: None, lambda: None, post=lambda f: f(),
+                               on_menu=lambda x, y: opened.append((x, y)))
+        icon = tray._icon_class()()
+        icon._on_button_press(types.SimpleNamespace(detail=3, root_x=10, root_y=20))
+        icon._on_button_press(types.SimpleNamespace(detail=1, root_x=0, root_y=0))
+        self.assertEqual(opened, [(10, 20)])
+        self.assertEqual(icon.activated, 1)

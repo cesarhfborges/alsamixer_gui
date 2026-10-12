@@ -1,0 +1,14 @@
+Package: alsamixer-gui
+Version: @VERSION@
+Section: sound
+Priority: optional
+Architecture: @ARCH@
+Depends: alsa-utils, x11-xserver-utils, libglib2.0-bin
+Installed-Size: @SIZE@
+Maintainer: Cesar Borges <cesarhfborges@gmail.com>
+Homepage: https://github.com/cesarhfborges/AlsaMixer
+Description: GUI para o ALSA Mixer
+ Interface gráfica para o alsamixer: volume e mudo por placa de som,
+ separados em Saída/Entrada/Opções, ícone na bandeja do sistema, início
+ com o sistema e restauração do estado de mudo (ex.: S/PDIF desligado
+ pelo PipeWire após o login).

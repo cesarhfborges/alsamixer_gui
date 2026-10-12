@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Alsamixer Control
+GenericName=Mixer de áudio
+Comment=Controle de volume, mudo e S/PDIF das placas de som ALSA
+Exec=/usr/bin/alsamixer-gui
+TryExec=/usr/bin/alsamixer-gui
+Icon=alsamixer-gui
+Terminal=false
+Categories=AudioVideo;Audio;Mixer;
+Keywords=alsa;mixer;volume;spdif;som;audio;
+StartupWMClass=Python Alsamixer GUI

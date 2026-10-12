@@ -11,5 +11,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 
 [tool.setuptools_scm]
+local_scheme = "no-local-version"   # sem "+g<hash>.d<data>" na versão/nome do .deb
 # Gera opcionalmente um arquivo de versão estático para produção/distribuição
 write_to = "src/_version.py"
