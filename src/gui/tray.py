@@ -161,7 +161,7 @@ class PystrayTrayIcon(TrayIcon):
                                            background_pixel=0, border_pixel=0, **kwargs)
 
                 root = self._display.screen().root
-                root.create_window = create_argb  # o método original monta hints/XEMBED
+                root.create_window = create_argb
                 try:
                     window = super()._create_window()
                 finally:
