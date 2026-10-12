@@ -39,9 +39,12 @@ class AlsamixerGUI(ctk.CTk):
                  tray_factory: TrayFactory = create_tray_icon,
                  mixer_state_store: Optional[MixerStateStore] = None,
                  autostart: Optional[AutostartManager] = None,
-                 start_in_tray: bool = False):
-        """`autostart=None` não mexe em ~/.config/autostart (testes); `start_in_tray` vem do --autostart."""
+                 start_minimized: bool = False):
+        """`autostart=None` não mexe em ~/.config/autostart (testes); `start_minimized` vem do --minimized."""
         super().__init__()
+        # Escondida durante a montagem: nada pisca na tela. Aparece no fim do __init__,
+        # ou nunca (--minimized com bandeja ativa: fica só o ícone).
+        self.withdraw()
         self.audio_controller = audio_controller
         self.settings_repository = settings_repository or InMemorySettingsRepository()
         self.settings: AppSettings = self.settings_repository.load()
@@ -100,8 +103,8 @@ class AlsamixerGUI(ctk.CTk):
         if self.settings.restore_state:
             self.enforce_saved_state()  # reaplica e atualiza a tela, avisando na barra de status
 
-        if (self.settings.start_hidden or start_in_tray) and self.tray.running:
-            self.withdraw()
+        if not (start_minimized and self.tray.running):
+            self.deiconify()
 
     def _set_window_icon(self) -> None:
         try:
@@ -114,21 +117,12 @@ class AlsamixerGUI(ctk.CTk):
 
     # ------------------------------------------------------------------ layout
     def _build_header(self) -> None:
+        """Só identificação: título + versão. As ações ficam na barra da placa de som e na bandeja."""
         header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew", padx=16, pady=(14, 4))
-        header.grid_columnconfigure(0, weight=1)
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(14, 2))
         self.title_label = ctk.CTkLabel(header, text="Alsamixer Control", font=ctk.CTkFont(size=20, weight="bold"))
-        self.title_label.grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(header, text=self.title_suffix, text_color="gray55").grid(row=0, column=0, sticky="w",
-                                                                              padx=(200, 0))
-        self.settings_button = ctk.CTkButton(header, text="⚙  Configurações", width=150, height=36,
-                                             font=ctk.CTkFont(size=14), command=self.open_settings)
-        self.settings_button.grid(row=0, column=1)
-        # Encerra de verdade (o "X" da janela só esconde quando a bandeja está ativa)
-        self.quit_button = ctk.CTkButton(header, text="⏻  Encerrar", width=120, height=36,
-                                         font=ctk.CTkFont(size=14), fg_color="#b94a48", hover_color="#953b39",
-                                         command=self.quit_app)
-        self.quit_button.grid(row=0, column=2, padx=(8, 0))
+        self.title_label.pack(side="left")
+        ctk.CTkLabel(header, text=self.title_suffix, text_color="gray55").pack(side="left", padx=(10, 0), pady=(4, 0))
 
     def _build_card_selector(self) -> None:
         toolbar = ctk.CTkFrame(self)
@@ -139,9 +133,17 @@ class AlsamixerGUI(ctk.CTk):
         self.card_select = Select(toolbar, font_size=15, values=[NO_CARD], height=40,
                                   command=self._on_card_selected)
         self.card_select.grid(row=0, column=1, sticky="ew", padx=6, pady=10)
-        self.reload_button = ctk.CTkButton(toolbar, text="Recarregar", width=120, height=40,
-                                           font=ctk.CTkFont(size=15), command=self.reload_cards)
-        self.reload_button.grid(row=0, column=2, padx=(6, 12), pady=10)
+        # Ações agrupadas na mesma barra, com o mesmo estilo (secundário) e altura do select
+        action = dict(height=40, font=ctk.CTkFont(size=15), fg_color="transparent", border_width=1,
+                      border_color=ThemeManager.color("CTkButton", "fg_color"),
+                      text_color=ThemeManager.color("CTkLabel", "text_color"),
+                      hover_color=("gray78", "gray28"))
+        self.reload_button = ctk.CTkButton(toolbar, text="⟳  Recarregar", width=130, command=self.reload_cards,
+                                           **action)
+        self.reload_button.grid(row=0, column=2, padx=6, pady=10)
+        self.settings_button = ctk.CTkButton(toolbar, text="⚙  Configurações", width=160,
+                                             command=self.open_settings, **action)
+        self.settings_button.grid(row=0, column=3, padx=(0, 12), pady=10)
 
     def _build_tabs(self) -> None:
         self.tabview = ctk.CTkTabview(self, command=self._on_tab_changed,

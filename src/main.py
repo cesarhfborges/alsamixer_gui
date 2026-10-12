@@ -21,8 +21,8 @@ APPLY_STATE_INTERVAL_S = 2
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="GUI para o mixer ALSA")
-    parser.add_argument("--autostart", action="store_true",
-                        help="iniciado com o sistema: abre só com o ícone na bandeja (se ativa)")
+    parser.add_argument("--minimized", "--autostart", dest="minimized", action="store_true",
+                        help="abre minimizado, só com o ícone na bandeja (usado ao iniciar com o sistema)")
     parser.add_argument("--apply-state", action="store_true",
                         help="aplica os estados de mudo salvos, sem interface, e encerra")
     return parser.parse_args(argv)
@@ -53,9 +53,9 @@ def main(argv=None):
     from src.gui.single_instance import SingleInstance
 
     # 1. Uma única instância: se já houver uma (ex.: escondida na bandeja), ela é exibida
-    #    (exceto no início automático, que não deve abrir a janela)
+    #    (exceto com --minimized, que não deve abrir a janela)
     instance = SingleInstance()
-    if not instance.acquire(show_existing=not args.autostart):
+    if not instance.acquire(show_existing=not args.minimized):
         print("O Alsamixer GUI já está em execução.")
         return 0
 
@@ -69,7 +69,7 @@ def main(argv=None):
     # 3. Injeta as dependências na Interface Gráfica (DIP do SOLID)
     app = AlsamixerGUI(audio_controller=mixer_service, settings_repository=settings_repository,
                        mixer_state_store=state_store, autostart=AutostartManager(),
-                       start_in_tray=args.autostart)
+                       start_minimized=args.minimized)
     instance.on_message = lambda message: app.dispatcher.post(app.show_window) if message == b"show" else None
     try:
         app.mainloop()

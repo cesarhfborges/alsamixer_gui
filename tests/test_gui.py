@@ -73,6 +73,8 @@ class GuiSmokeTest(unittest.TestCase):
         app = AlsamixerGUI(controller, settings_repository=repo, mixer_state_store=store,
                            tray_factory=lambda **kw: FakeTray(**kw))
 
+        # abertura normal (mesmo com bandeja ativa): janela visível
+        self.assertEqual(app.state(), "normal")
         # placa padrão + abas montadas
         self.assertEqual(app.current_card.id, "PCH")
         output = app.panels[Section.OUTPUT].views
@@ -90,11 +92,17 @@ class GuiSmokeTest(unittest.TestCase):
         self.assertEqual(app.state(), "withdrawn")
         app.tray.callbacks["on_menu"](100, 100)
         self.assertEqual(app.tray_menu.buttons[-1].cget("text"), "Encerrar")
-        app.tray_menu.close()
-
-        # botão Encerrar da janela encerra de verdade
-        app.quit_button.invoke()
+        app.tray_menu.buttons[-1].invoke()  # Encerrar
         self.assertFalse(app.tray.running)
+
+    def test_minimized_start_never_shows_window(self):
+        from src.gui.main_window import AlsamixerGUI
+        repo = InMemorySettingsRepository(AppSettings(poll_interval_ms=0, theme="Dark", tray_enabled=True))
+        app = AlsamixerGUI(FakeController(), settings_repository=repo, start_minimized=True,
+                           tray_factory=lambda **kw: FakeTray(**kw))
+        app.update()
+        self.assertEqual(app.state(), "withdrawn")
+        app.destroy()
 
 
 if __name__ == "__main__":

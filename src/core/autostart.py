@@ -14,6 +14,7 @@ DESKTOP_FILE = "alsamixer-gui.desktop"
 AUTOSTART_DELAY_S = 5
 PROJECT_MAIN = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "main.py"))
 INSTALLED_BIN = "/usr/bin/alsamixer-gui"  # link criado pelo pacote .deb
+MINIMIZED_FLAG = "--minimized"  # o app abre só com o ícone na bandeja
 DISABLED_LINE = "X-GNOME-Autostart-enabled=false"  # gravado pelo "Aplicativos de inicialização" do Mint
 
 
@@ -25,9 +26,9 @@ def default_autostart_path() -> str:
 def default_command() -> List[str]:
     if getattr(sys, "frozen", False):  # binário do PyInstaller (.deb)
         binary = INSTALLED_BIN if os.path.exists(INSTALLED_BIN) else sys.executable
-        return [binary, "--autostart"]
+        return [binary, MINIMIZED_FLAG]
     # sys.executable sem resolver links: mantém o Python do .venv (e suas dependências)
-    return [sys.executable, PROJECT_MAIN, "--autostart"]
+    return [sys.executable, PROJECT_MAIN, MINIMIZED_FLAG]
 
 
 def _quote(arg: str) -> str:

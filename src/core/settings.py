@@ -35,7 +35,6 @@ class AppSettings:
     wheel_step: int = 3             # % por passo da roda do mouse sobre o slider
     remember_window: bool = True    # restaura tamanho/posição da janela
     tray_enabled: bool = False      # ícone na bandeja; fechar a janela apenas a esconde
-    start_hidden: bool = False      # com a bandeja ativa, inicia só com o ícone
     autostart: bool = False         # inicia com o sistema (~/.config/autostart)
     restore_state: bool = True      # reaplica os estados de mudo salvos ao iniciar
     keep_state: bool = True         # reaplica se o sistema (ex.: PipeWire) alterar um estado salvo
@@ -58,7 +57,6 @@ class AppSettings:
             "wheel_step": self.wheel_step in WHEEL_STEPS,
             "remember_window": isinstance(self.remember_window, bool),
             "tray_enabled": isinstance(self.tray_enabled, bool),
-            "start_hidden": isinstance(self.start_hidden, bool),
             "autostart": isinstance(self.autostart, bool),
             "restore_state": isinstance(self.restore_state, bool),
             "keep_state": isinstance(self.keep_state, bool),

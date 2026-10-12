@@ -110,7 +110,7 @@ O pacote **não** ativa o início automático: cada usuário decide em
 `~/.config/autostart/alsamixer-gui.desktop` com:
 
 ```ini
-Exec=/usr/bin/alsamixer-gui --autostart
+Exec=/usr/bin/alsamixer-gui --minimized
 TryExec=/usr/bin/alsamixer-gui
 X-GNOME-Autostart-Delay=5
 ```
@@ -122,7 +122,7 @@ X-GNOME-Autostart-Delay=5
 Outros parâmetros do binário:
 
 ```bash
-alsamixer-gui --autostart     # inicia escondido na bandeja (usado pelo início automático)
+alsamixer-gui --minimized     # inicia escondido na bandeja (usado pelo início automático)
 alsamixer-gui --apply-state   # só reaplica os estados de mudo salvos, sem interface, e encerra
 ```
 

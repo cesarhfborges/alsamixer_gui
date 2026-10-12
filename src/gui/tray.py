@@ -53,9 +53,37 @@ class NullTrayIcon(TrayIcon):
 
 
 def create_icon_image(size: int = 64):
-    """Ícone da bandeja (src/assets/audio-wave.svg) sobre fundo opaco: a bandeja XEmbed não tem alpha."""
+    """Ícone da bandeja (src/assets/audio-wave.svg) com fundo transparente."""
     from .icon import render_icon
-    return render_icon(size)
+    return render_icon(size, bg=None, padding=0.04)
+
+
+def compose_on_panel(icon, size, panel_rgb):
+    """A bandeja XEmbed (pystray X11) só aceita RGB: desenha o ícone sobre a cor do painel.
+
+    Cor do desenho com contraste: branco em painel escuro, cinza escuro em painel claro.
+    """
+    from PIL import Image
+    r, g, b = panel_rgb
+    fg = (245, 245, 245) if (0.299 * r + 0.587 * g + 0.114 * b) < 140 else (45, 45, 45)
+    mask = icon.resize(size, Image.LANCZOS).getchannel("A")
+    image = Image.new("RGB", size, panel_rgb)
+    image.paste(fg, (0, 0, *size), mask)
+    return image
+
+
+def sample_panel_color(display, window, default=(32, 32, 32)):
+    """Cor do fundo da bandeja logo à esquerda do ícone (lida da tela)."""
+    try:
+        from Xlib import X
+        root = display.screen().root
+        pos = window.translate_coords(root, 0, 0)
+        x, y = -pos.x, -pos.y
+        height = window.get_geometry().height
+        data = root.get_image(max(0, x - 3), y + height // 2, 1, 1, X.ZPixmap, 0xFFFFFFFF).data
+        return data[2], data[1], data[0]
+    except Exception:
+        return default
 
 
 class PystrayTrayIcon(TrayIcon):
@@ -107,6 +135,14 @@ class PystrayTrayIcon(TrayIcon):
         post, on_menu = self._post, self._on_menu
 
         class IconWithMenu(base):
+            def _assert_icon_data(self, width, height):
+                # Original: cola o RGBA sobre fundo preto. Aqui: sobre a cor real do painel.
+                if self._icon_data and self._icon_data.size == (width, height):
+                    return
+                panel = sample_panel_color(self._display, self._window)
+                self._icon_data = compose_on_panel(self._icon, (width, height), panel)
+                self._icon_data.tostring = self._icon_data.tobytes
+
             def _on_button_press(self, event):
                 if event.detail == 3:  # botão direito
                     x, y = event.root_x, event.root_y

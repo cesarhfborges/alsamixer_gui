@@ -55,11 +55,8 @@ def build_fields(cards: List[SoundCard], tray_available: bool = True) -> List[Se
                      "Mostra um ícone na bandeja. Fechar a janela apenas a esconde; clique no ícone para "
                      "reabrir e use \"Sair\" no menu do ícone para encerrar." + unavailable,
                      [("Sim", True), ("Não", False)]),
-        SettingField("start_hidden", "Bandeja do sistema", "Iniciar minimizado na bandeja",
-                     "Ao abrir, exibe apenas o ícone na bandeja (requer \"Manter na bandeja\").",
-                     [("Sim", True), ("Não", False)]),
         SettingField("autostart", "Sistema", "Iniciar com o sistema",
-                     "Abre o app ao entrar no sistema, só com o ícone na bandeja (ativa a bandeja).",
+                     "Ao entrar no sistema, abre minimizado: só o ícone na bandeja (ativa a bandeja).",
                      [("Sim", True), ("Não", False)]),
         SettingField("restore_state", "Sistema", "Restaurar estado de mudo ao iniciar",
                      "Reaplica o mudo/ligado que você escolheu no app (ex.: manter o S/PDIF ligado).",

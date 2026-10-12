@@ -129,8 +129,8 @@ class AutostartTest(unittest.TestCase):
         self.path = os.path.join(self.dir.name, "autostart", "alsamixer-gui.desktop")
 
     def test_desktop_entry(self):
-        entry = build_desktop_entry(["/opt/my app/.venv/bin/python", "/opt/my app/main.py", "--autostart"])
-        self.assertIn('Exec="/opt/my app/.venv/bin/python" "/opt/my app/main.py" --autostart', entry)
+        entry = build_desktop_entry(["/opt/my app/.venv/bin/python", "/opt/my app/main.py", "--minimized"])
+        self.assertIn('Exec="/opt/my app/.venv/bin/python" "/opt/my app/main.py" --minimized', entry)
         self.assertIn("X-GNOME-Autostart-Delay=", entry)
         self.assertTrue(entry.startswith("[Desktop Entry]\nType=Application"))
 
@@ -140,13 +140,13 @@ class AutostartTest(unittest.TestCase):
         self.assertEqual(manager.command[0], sys.executable)
         self.assertTrue(manager.command[1].endswith("main.py") and os.path.isabs(manager.command[1]))
         self.assertTrue(os.path.exists(manager.command[1]))
-        self.assertEqual(manager.command[2], "--autostart")
+        self.assertEqual(manager.command[2], "--minimized")
 
     def test_sync_enable_disable_and_rewrite_when_project_moves(self):
-        manager = AutostartManager(self.path, ["/a/python", "/a/main.py", "--autostart"])
+        manager = AutostartManager(self.path, ["/a/python", "/a/main.py", "--minimized"])
         manager.sync(True)
         self.assertTrue(manager.is_enabled() and manager.is_current())
-        moved = AutostartManager(self.path, ["/b/python", "/b/main.py", "--autostart"])
+        moved = AutostartManager(self.path, ["/b/python", "/b/main.py", "--minimized"])
         self.assertFalse(moved.is_current())
         moved.sync(True)
         with open(self.path) as fh:
@@ -156,7 +156,7 @@ class AutostartTest(unittest.TestCase):
         moved.sync(False)  # idempotente
 
     def test_respects_disable_from_mint_startup_applications(self):
-        manager = AutostartManager(self.path, ["/a/python", "/a/main.py", "--autostart"])
+        manager = AutostartManager(self.path, ["/a/python", "/a/main.py", "--minimized"])
         manager.enable()
         with open(self.path, "a") as fh:
             fh.write("X-GNOME-Autostart-enabled=false\n")
@@ -168,9 +168,9 @@ class AutostartTest(unittest.TestCase):
 class CommandLineTest(unittest.TestCase):
     def test_flags(self):
         from src.main import parse_args
-        self.assertTrue(parse_args(["--autostart"]).autostart)
+        self.assertTrue(parse_args(["--minimized"]).minimized)
         self.assertTrue(parse_args(["--apply-state"]).apply_state)
-        self.assertFalse(parse_args([]).autostart)
+        self.assertFalse(parse_args([]).minimized)
 
 
 if __name__ == "__main__":
