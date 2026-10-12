@@ -1,19 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ClaudeCodeEditorTabs">
-    <option name="activeSessionId" value="b9734005-5c3b-4fbc-92b0-bc20ed7eb467" />
+    <option name="activeSessionId" value="5531d05c-bf6c-4c80-bc6b-d59d7067de35" />
     <option name="openSessionIds">
       <list>
         <option value="b9734005-5c3b-4fbc-92b0-bc20ed7eb467" />
+        <option value="5531d05c-bf6c-4c80-bc6b-d59d7067de35" />
       </list>
     </option>
     <option name="sessionPaths">
       <map>
+        <entry key="5531d05c-bf6c-4c80-bc6b-d59d7067de35" value="/sessions/69339452-5635-45d3-a9b7-d84e72ab49d8" />
         <entry key="b9734005-5c3b-4fbc-92b0-bc20ed7eb467" value="/sessions/69339452-5635-45d3-a9b7-d84e72ab49d8" />
       </map>
     </option>
     <option name="sessionTitles">
       <map>
+        <entry key="5531d05c-bf6c-4c80-bc6b-d59d7067de35" value="com base no projeto atual, preciso criar uma GUI p" />
         <entry key="b9734005-5c3b-4fbc-92b0-bc20ed7eb467" value="com base no projeto atual, preciso criar uma GUI p" />
       </map>
     </option>
