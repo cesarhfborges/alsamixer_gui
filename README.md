@@ -4,6 +4,18 @@ O **AlsaMixer GUI** é uma interface gráfica moderna desenvolvida em Python com
 
 ---
 
+## 📦 Download
+
+Baixe o pacote `.deb` pronto na página de **[-> Releases <-](https://github.com/cesarhfborges/alsamixer_gui/releases)** usando o GUI visual dando 2 clicks ou instale usando comando:
+
+```bash
+sudo apt install ./alsamixer-gui_*_amd64.deb
+```
+
+Depois é só abrir pelo menu do sistema (**Alsamixer Control**) ou rodar `alsamixer-gui` no terminal.
+
+---
+
 ### ✨ Funcionalidades
 
 * **Gerenciamento de Placas de Som:** detecção automática e seleção de dispositivos físicos listados em `/proc/asound/cards`.
@@ -19,7 +31,7 @@ O **AlsaMixer GUI** é uma interface gráfica moderna desenvolvida em Python com
 * **Bandeja do Sistema (System Tray):**
   * Suporte a execução em segundo plano via tray icon (`pystray`).
   * Fechar para a bandeja, inicialização minimizada e garantia de instância única via socket Unix.
-* **Sincronização em Tempo Real:** *polling* automático (2s) com *debounce* (~60 ms) ao mover sliders, refletindo mudanças externas sem congelar a interface.
+* **Sincronização em Tempo Real:** *polling* automático (2s) com *debounce* (~60ms) ao mover sliders, refletindo mudanças externas sem congelar a interface.
 * **Gerenciamento Multi-Monitor:** memorização inteligente de tamanho, posição física real (offset de decorações do gerenciador de janelas) e prevenção de saltos de tela ao aplicar escalas.
 * **Personalização Completa:** temas Claro/Escuro/Sistema, escala de DPI da interface e persistência atômica das preferências em `$XDG_CONFIG_HOME/alsamixer-gui/settings.json`.
 
