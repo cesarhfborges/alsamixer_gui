@@ -11,6 +11,7 @@ from typing import List, Optional
 import customtkinter as ctk
 
 from .theme_manager import ThemeManager
+from .popup_menu import OutsideClickWatcher
 from .window_placement import detect_monitors, monitor_at
 
 ITEM_HEIGHT = 38
@@ -103,6 +104,7 @@ class DropdownPopup(tkinter.Toplevel):
         self.bind("<Return>", lambda e: self.choose(self._values[self._highlight]))
         self.bind("<KP_Enter>", lambda e: self.choose(self._values[self._highlight]))
         self.bind("<ButtonPress>", self._on_click, add=True)
+        self._watcher = OutsideClickWatcher(self, self.close)
 
     # --- aparência ---------------------------------------------------------
     @staticmethod
@@ -172,6 +174,7 @@ class DropdownPopup(tkinter.Toplevel):
         if self._closed:
             return
         self._closed = True
+        self._watcher.stop()
         try:
             self.grab_release()
         except tkinter.TclError:
