@@ -52,38 +52,45 @@ class NullTrayIcon(TrayIcon):
         pass
 
 
+# Margem do desenho dentro do espaço da bandeja (mesmo tamanho visual dos outros ícones)
+TRAY_ICON_PADDING = 0.2
+
+
 def create_icon_image(size: int = 64):
-    """Ícone da bandeja (src/assets/audio-wave.svg) com fundo transparente."""
-    from .icon import render_icon
-    return render_icon(size, bg=None, padding=0.04)
+    """Ícone da bandeja (src/assets/audio-wave.svg), fundo transparente.
 
-
-def compose_on_panel(icon, size, panel_rgb):
-    """A bandeja XEmbed (pystray X11) só aceita RGB: desenha o ícone sobre a cor do painel.
-
-    Cor do desenho com contraste: branco em painel escuro, cinza escuro em painel claro.
+    Cor com contraste para o tema: branco no escuro, cinza escuro no claro.
     """
-    from PIL import Image
-    r, g, b = panel_rgb
-    fg = (245, 245, 245) if (0.299 * r + 0.587 * g + 0.114 * b) < 140 else (45, 45, 45)
-    mask = icon.resize(size, Image.LANCZOS).getchannel("A")
-    image = Image.new("RGB", size, panel_rgb)
-    image.paste(fg, (0, 0, *size), mask)
-    return image
+    from .icon import render_icon
+    from .theme_manager import ThemeManager
+    dark = ThemeManager.detect_system_mode() == "Dark"
+    fg = (245, 245, 245, 255) if dark else (50, 50, 50, 255)
+    return render_icon(size, fg=fg, bg=None, padding=TRAY_ICON_PADDING)
 
 
-def sample_panel_color(display, window, default=(32, 32, 32)):
-    """Cor do fundo da bandeja logo à esquerda do ícone (lida da tela)."""
-    try:
-        from Xlib import X
-        root = display.screen().root
-        pos = window.translate_coords(root, 0, 0)
-        x, y = -pos.x, -pos.y
-        height = window.get_geometry().height
-        data = root.get_image(max(0, x - 3), y + height // 2, 1, 1, X.ZPixmap, 0xFFFFFFFF).data
-        return data[2], data[1], data[0]
-    except Exception:
-        return default
+def argb_visual(display):
+    """Visual ARGB (32 bits) anunciado pela bandeja em _NET_SYSTEM_TRAY_VISUAL, se houver."""
+    from Xlib import X
+    screen = display.screen()
+    owner = display.get_selection_owner(display.intern_atom(f"_NET_SYSTEM_TRAY_S{display.get_default_screen()}"))
+    if owner == X.NONE:
+        return None
+    prop = owner.get_full_property(display.intern_atom("_NET_SYSTEM_TRAY_VISUAL"), X.AnyPropertyType)
+    if not prop or not prop.value:
+        return None
+    visual_id = prop.value[0]
+    for depth in screen.allowed_depths:
+        if depth.depth == 32 and any(v.visual_id == visual_id for v in depth.visuals):
+            return visual_id
+    return None
+
+
+def premultiplied_bgra(image) -> bytes:
+    """RGBA (Pillow) → BGRA com alpha pré-multiplicado (formato de janelas ARGB do X11)."""
+    out = bytearray()
+    for r, g, b, a in image.getdata():
+        out += bytes((b * a // 255, g * a // 255, r * a // 255, a))
+    return bytes(out)
 
 
 class PystrayTrayIcon(TrayIcon):
@@ -135,13 +142,45 @@ class PystrayTrayIcon(TrayIcon):
         post, on_menu = self._post, self._on_menu
 
         class IconWithMenu(base):
-            def _assert_icon_data(self, width, height):
-                # Original: cola o RGBA sobre fundo preto. Aqui: sobre a cor real do painel.
-                if self._icon_data and self._icon_data.size == (width, height):
-                    return
-                panel = sample_panel_color(self._display, self._window)
-                self._icon_data = compose_on_panel(self._icon, (width, height), panel)
-                self._icon_data.tostring = self._icon_data.tobytes
+            """Ícone com transparência real (visual ARGB da bandeja) e menu no clique direito.
+
+            O pystray cria a janela em RGB e cola o ícone sobre preto; aqui a janela usa o
+            visual de 32 bits da bandeja e os pixels são enviados com alpha.
+            """
+
+            def _create_window(self):
+                from Xlib import X
+                visual = argb_visual(self._display)
+                if visual is None:
+                    return super()._create_window()  # bandeja sem ARGB: comportamento padrão
+                original_create = self._display.screen().root.create_window
+                colormap = self._display.screen().root.create_colormap(visual, X.AllocNone)
+
+                def create_argb(x, y, w, h, border, depth, **kwargs):
+                    return original_create(x, y, w, h, border, 32, visual=visual, colormap=colormap,
+                                           background_pixel=0, border_pixel=0, **kwargs)
+
+                root = self._display.screen().root
+                root.create_window = create_argb  # o método original monta hints/XEMBED
+                try:
+                    window = super()._create_window()
+                finally:
+                    del root.create_window
+                self._argb = True
+                return window
+
+            def _draw(self):
+                if not getattr(self, "_argb", False):
+                    return super()._draw()
+                from PIL import Image
+                from Xlib import X, error
+                try:
+                    dim = self._window.get_geometry()
+                    image = self._icon.resize((dim.width, dim.height), Image.LANCZOS).convert("RGBA")
+                    self._window.put_image(self._gc, 0, 0, dim.width, dim.height, X.ZPixmap, 32, 0,
+                                           premultiplied_bgra(image))
+                except error.BadDrawable:
+                    pass
 
             def _on_button_press(self, event):
                 if event.detail == 3:  # botão direito
